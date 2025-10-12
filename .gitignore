@@ -1,0 +1,50 @@
+# --- Node / JS / TS ---
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.log
+
+# Paketmanager-Cache/Locks (optional rausnehmen, wenn ihr Locks committen wollt)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Env-Dateien (niemals ins Repo!)
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.envrc
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- R / RStudio ---
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+
+# --- Betriebssystem ---
+.DS_Store
+Thumbs.db
+
+# --- Sonstiges / temporär ---
+*.tmp
+*.swp
+*.swo

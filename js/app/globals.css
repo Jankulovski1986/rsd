@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* kleine Helfer */
+.table-cell { @apply px-3 py-2 border-b; }
+.kpi { @apply rounded-2xl shadow p-4 bg-white; }
+.btn { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 shadow; }
+.btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700; }
+.btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+.input { @apply w-full rounded-lg border px-3 py-2; }
+.label { @apply text-sm font-medium text-gray-700; }
+.modal-backdrop { @apply fixed inset-0 bg-black/40; }
+.modal-panel { @apply w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl; }
+
+
+/* immer horizontal scrollen erlauben + Platz für Scrollbar reservieren */
+.scroller-x{
+  overflow-x: scroll;           /* nicht auto → Leiste bleibt „verfügbar“ */
+  overflow-y: hidden;
+  scrollbar-gutter: stable both-edges; /* verhindert Layout-Sprung */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* sorgt dafür, dass Inhalte nicht umbrechen → echte horizontale Breite */
+.scroller-x .min-w-max{
+  min-width: max-content;
+}
+
+/* optional: Scrollbar-Höhe/Look (Chrome/Edge/Safari) */
+.scroller-x::-webkit-scrollbar{ height: 12px; }
+.scroller-x::-webkit-scrollbar-thumb{ background: rgba(0,0,0,.3); border-radius: 8px; }
+.scroller-x::-webkit-scrollbar-track{ background: rgba(0,0,0,.06); }
