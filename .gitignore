@@ -48,3 +48,7 @@ Thumbs.db
 *.tmp
 *.swp
 *.swo
+js/next.config.mjs
+js/public/mock/ausschreibungen.json
+js/public/mock/kpis.json
+js/public/mock/by_month.json

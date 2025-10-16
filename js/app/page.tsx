@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import NewForm from "@/components/NewForm";
 import Kpis from "@/components/Kpis";
-import ByMonthChart from "@/components/ByMonthChart";
+// import ByMonthChart from "@/components/ByMonthChart";
 
 type Row = {
   id: number;
@@ -42,6 +42,8 @@ export default function Page() {
   const [openEdit, setOpenEdit] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [openDelete, setOpenDelete] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Row | null>(null);
 
   // DT-ähnliche Controls
   const [globalQuery, setGlobalQuery] = useState("");
@@ -103,6 +105,17 @@ export default function Page() {
 
   useEffect(() => { load(); }, []);
   useEffect(() => { const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+
+  async function doDelete(id: number) {
+    setBusyId(id);
+    const res = await fetch(`/api/ausschreibungen/${id}`, { method: "DELETE" });
+    setBusyId(null);
+    if (!res.ok) {
+      alert("Löschen fehlgeschlagen.");
+      return;
+    }
+    await load();
+  }
 
   async function onDelete(id: number) {
     if (!confirm(`Diesen Datensatz (ID ${id}) wirklich löschen?`)) return;
@@ -194,6 +207,35 @@ export default function Page() {
     }
   }
 
+  // Nur die Root/Domain als Linktext anzeigen
+  function linkLabel(href: string): string {
+    try {
+      const u = new URL(href);
+      return u.host;
+    } catch {
+      const s = String(href ?? "");
+      const s2 = s.replace(/^https?:\/\//i, "");
+      return s2.split("/")[0] || s;
+    }
+  }
+
+  // Hervorhebung: Abgabefrist innerhalb der nächsten 7 Tage
+  function parseYMD(s: string): Date | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+
+  function isDueSoon(dateStr?: string | null): boolean {
+    if (!dateStr) return false;
+    const due = parseYMD(String(dateStr));
+    if (!due) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
+    return diffDays >= 0 && diffDays <= 7;
+  }
+
   const SortHeader = ({ label, k }: { label: string; k: SortKey }) => {
     const active = sortKey === k;
     return (
@@ -208,6 +250,65 @@ export default function Page() {
         </span>
       </button>
     );
+  };
+
+  // CSV export of filtered + sorted rows (all, not just page)
+  const exportCsv = () => {
+    const rowsToExport = sorted;
+    if (!rowsToExport || rowsToExport.length === 0) {
+      alert("Keine Daten fuer Export vorhanden.");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Abgabefrist",
+      "Uhrzeit",
+      "Ort",
+      "Name",
+      "Kurzbesch.",
+      "Teilnahme",
+      "Bearbeiter",
+      "Abgegeben",
+      "Vergabe-Nr.",
+      "Link",
+    ];
+
+    const esc = (v: unknown): string => {
+      const s0 = String(v ?? "");
+      const needsQuote = s0.includes(";") || s0.includes("\n") || s0.includes("\r") || s0.includes('"');
+      if (needsQuote) return '"' + s0.replace(/"/g, '""') + '"';
+      return s0;
+    };
+
+    const lines = [headers.join(";")];
+    for (const r of rowsToExport) {
+      lines.push([
+        esc(r.id),
+        esc(r.abgabefrist ?? ""),
+        esc(r.uhrzeit ?? ""),
+        esc(r.ort ?? ""),
+        esc(r.name ?? ""),
+        esc(r.kurzbesch_auftrag ?? ""),
+        esc(r.teilnahme ?? ""),
+        esc(r.bearbeiter ?? ""),
+        esc(r.abgegeben ? "Ja" : "Nein"),
+        esc(r.vergabe_nr ?? ""),
+        esc(r.link ?? ""),
+      ].join(";"));
+    }
+
+    const content = "\ufeff" + lines.join("\n"); // UTF-8 BOM for Excel
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.download = `ausschreibungen_export_${ts}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const HeaderBar = (
@@ -241,7 +342,9 @@ export default function Page() {
           </select>
         </div>
 
-        <button className="btn-success" onClick={() => setOpenNew(true)}>➕ Neu</button>
+        {/* <button className="btn-success" onClick={() => setOpenNew(true)}>➕ Neu</button> */}
+        <button className="btn-success" onClick={() => setOpenNew(true)}> <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"> <rect x="11" y="5" width="2" height="14" /> <rect x="5" y="11" width="14" height="2" /> </svg> Neu </button>
+          <button className="btn" onClick={exportCsv}>CSV Export</button>
       </div>
     </header>
   );
@@ -319,8 +422,11 @@ export default function Page() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map(r => (
-                    <tr key={r.id} className="odd:bg-white even:bg-gray-50">
+                  {paged.map(r => {
+                    const highlight = isDueSoon(r.abgabefrist ?? "");
+                    const linkText = r.link ? linkLabel(r.link) : "";
+                    return (
+                    <tr key={r.id} className={highlight ? "bg-yellow-100" : "odd:bg-white even:bg-gray-50"}>
                       <td className="table-cell">{r.id}</td>
                       <td className="table-cell">{r.abgabefrist ?? ""}</td>
                       <td className="table-cell">{r.uhrzeit ?? ""}</td>
@@ -332,18 +438,19 @@ export default function Page() {
                       <td className="table-cell">{r.abgegeben ? "Ja" : "Nein"}</td>
                       <td className="table-cell">{r.vergabe_nr ?? ""}</td>
                       <td className="table-cell">
-                        {r.link ? <a className="text-blue-700 underline" href={r.link} target="_blank">Öffnen</a> : ""}
+                        {r.link ? <a className="text-blue-700 underline" href={r.link} target="_blank" rel="noopener noreferrer">{linkText}</a> : ""}
                       </td>
                       <td className="table-cell">
                         <div className="flex gap-2">
                           <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }}>Bearbeiten</button>
-                          <button className="btn" onClick={() => onDelete(r.id)} disabled={busyId === r.id}>
+                          <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={busyId === r.id}>
                             {busyId === r.id ? "Lösche…" : "Löschen"}
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                   {paged.length === 0 && (
                     <tr>
                       <td className="table-cell" colSpan={12}>Keine Einträge gefunden.</td>
@@ -359,7 +466,7 @@ export default function Page() {
           <div className="scroller-x" ref={bottomRef} aria-hidden />
         </div>
 
-        <ByMonthChart />
+        {/* <ByMonthChart /> */}
       </section>
 
       {/* Neu */}
@@ -380,6 +487,41 @@ export default function Page() {
           onCancel={() => setOpenEdit(false)}
         />
       </Modal>
+
+      {/* Delete Confirm */}
+      <Modal open={openDelete} onClose={() => setOpenDelete(false)}>
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Wirklich löschen?</h2>
+          <p className="text-sm text-gray-700">
+            {deleteRow ? (
+              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({deleteRow.name})</> : null} wird dauerhaft gelöscht.</>
+            ) : (
+              <>Ausgewählten Datensatz dauerhaft löschen.</>
+            )}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn" onClick={() => setOpenDelete(false)}>Abbrechen</button>
+            <button
+              className="btn-primary"
+              disabled={!deleteRow || busyId === (deleteRow?.id ?? null)}
+              onClick={async () => {
+                if (!deleteRow) return;
+                await doDelete(deleteRow.id);
+                setOpenDelete(false);
+                setDeleteRow(null);
+              }}
+            >
+              {deleteRow && busyId === deleteRow.id ? "Lösche…" : "Löschen"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </main>
   );
 }
+
+
+
+
+
+

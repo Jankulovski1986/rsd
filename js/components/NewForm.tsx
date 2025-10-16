@@ -27,6 +27,7 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const nameValid = (form.name ?? "").trim().length > 0;
 
   // Initialwerte für Edit
   useEffect(() => {
@@ -54,6 +55,10 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
   }, [initial]);
 
   async function save() {
+    if (!nameValid) {
+      setErr("Name ist erforderlich.");
+      return;
+    }
     setBusy(true); setErr(null);
 
     const payload = {
@@ -109,7 +114,16 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
         </div>
         <div>
           <label className="label">Name *</label>
-          <input className="input" value={form.name} onChange={e=>set("name", e.target.value)} />
+          <input
+            required
+            aria-invalid={!nameValid}
+            className={`input ${!nameValid ? "border-red-500" : ""}`}
+            value={form.name}
+            onChange={e=>set("name", e.target.value)}
+          />
+          {!nameValid && err && (
+            <div className="text-sm text-red-600 mt-1">Bitte einen Namen eingeben.</div>
+          )}
         </div>
         <div>
           <label className="label">Kurzbesch. Auftrag</label>
@@ -173,10 +187,11 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
 
       <div className="mt-6 flex gap-2 justify-end">
         <button onClick={onCancel} className="btn">Abbrechen</button>
-        <button onClick={save} disabled={busy} className="btn-primary">
+        <button onClick={save} disabled={busy || !nameValid} className="btn-primary">
           {busy ? "Speichern…" : "Speichern"}
         </button>
       </div>
     </div>
   );
 }
+

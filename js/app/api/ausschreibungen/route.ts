@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 // Ein globaler Pool (hot-reload-sicher)
 let pool: Pool;
@@ -37,6 +39,102 @@ export async function GET(req: Request) {
   } catch (err: any) {
     console.error("[/api/ausschreibungen] ERROR:", err);
     // Nie leeren Body senden
+    return NextResponse.json(
+      { error: "Internal Server Error", detail: String(err?.message ?? err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const toNull = (v: any) => (v === undefined || v === "" ? null : v);
+
+    const name = String(body.name ?? "").trim();
+    if (!name) {
+      return NextResponse.json({ error: "'name' ist erforderlich" }, { status: 400 });
+    }
+
+    // Mock-Modus: schreibe in public/mock/ausschreibungen.json statt DB
+    if (process.env.USE_MOCK === '1') {
+      const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
+      const txt = await fs.readFile(file, "utf8").catch(() => "[]");
+      const arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
+      const now = new Date().toISOString();
+      const nextId = arr.reduce((m: number, r: any) => Math.max(m, Number(r?.id ?? 0)), 0) + 1;
+      const row = {
+        id: nextId,
+        abgabefrist: toNull(body.abgabefrist),
+        uhrzeit: toNull(body.uhrzeit),
+        ort: toNull(body.ort),
+        name,
+        kurzbesch_auftrag: toNull(body.kurzbesch_auftrag),
+        teilnahme: toNull(body.teilnahme),
+        grund_bei_ablehnung: toNull(body.grund_bei_ablehnung),
+        bearbeiter: toNull(body.bearbeiter),
+        bemerkung: toNull(body.bemerkung),
+        abgegeben: Boolean(body.abgegeben ?? false),
+        abholfrist: toNull(body.abholfrist),
+        fragefrist: toNull(body.fragefrist),
+        besichtigung: toNull(body.besichtigung),
+        bewertung: toNull(body.bewertung),
+        zuschlagsfrist: toNull(body.zuschlagsfrist),
+        ausfuehrung: toNull(body.ausfuehrung),
+        vergabe_nr: toNull(body.vergabe_nr),
+        link: toNull(body.link),
+        created_at: now,
+        updated_at: now,
+      };
+      arr.unshift(row);
+      await fs.writeFile(file, JSON.stringify(arr, null, 2), "utf8");
+      return NextResponse.json(row, { status: 201 });
+    }
+
+    // Normalfall: in DB schreiben
+    const values = [
+      toNull(body.abgabefrist),
+      toNull(body.uhrzeit),
+      toNull(body.ort),
+      name,
+      toNull(body.kurzbesch_auftrag),
+      toNull(body.teilnahme),
+      toNull(body.grund_bei_ablehnung),
+      toNull(body.bearbeiter),
+      toNull(body.bemerkung),
+      Boolean(body.abgegeben ?? false),
+      toNull(body.abholfrist),
+      toNull(body.fragefrist),
+      toNull(body.besichtigung),
+      toNull(body.bewertung),
+      toNull(body.zuschlagsfrist),
+      toNull(body.ausfuehrung),
+      toNull(body.vergabe_nr),
+      toNull(body.link),
+    ];
+
+    const sql = `
+      INSERT INTO public.ausschreibungen (
+        abgabefrist, uhrzeit, ort, name, kurzbesch_auftrag,
+        teilnahme, grund_bei_ablehnung, bearbeiter, bemerkung,
+        abgegeben, abholfrist, fragefrist, besichtigung, bewertung,
+        zuschlagsfrist, ausfuehrung, vergabe_nr, link
+      ) VALUES (
+        $1,$2,$3,$4,$5,
+        $6,$7,$8,$9,
+        $10,$11,$12,$13,$14,
+        $15,$16,$17,$18
+      ) RETURNING *
+    `;
+
+    const { rows } = await pool.query(sql, values);
+    return NextResponse.json(rows[0], { status: 201 });
+  } catch (err: any) {
+    console.error("[/api/ausschreibungen POST] ERROR:", err);
     return NextResponse.json(
       { error: "Internal Server Error", detail: String(err?.message ?? err) },
       { status: 500 }
