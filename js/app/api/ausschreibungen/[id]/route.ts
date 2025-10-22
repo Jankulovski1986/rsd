@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { logAudit, getReqMeta } from "@/lib/audit";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -20,6 +23,7 @@ pool = global._pgPool2!;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   try {
@@ -35,7 +39,29 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
       await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8");
       return NextResponse.json({ ok: true });
     } else {
+      // Load before
+      const beforeRes = await pool.query("SELECT * FROM public.ausschreibungen WHERE id=$1", [id]);
+      if (beforeRes.rowCount === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const before = beforeRes.rows[0];
       await pool.query("DELETE FROM public.ausschreibungen WHERE id=$1", [id]);
+
+      // Audit: delete
+      try {
+        const session = (await getServerSession(authOptions)) as any;
+        const { ip, userAgent, requestId } = getReqMeta(_req);
+        await logAudit(pool, {
+          action: "delete",
+          table: "ausschreibungen",
+          rowPk: { id },
+          before,
+          actorUserId: session?.user?.id ? Number(session.user.id) : null,
+          actorEmail: session?.user?.email ?? null,
+          ip, userAgent, requestId,
+        });
+      } catch (e) {
+        console.error("[/api/ausschreibungen/[id] DELETE] audit failed", e);
+      }
+
       return NextResponse.json({ ok: true });
     }
   } catch (err: any) {
@@ -91,6 +117,9 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
       await fs.writeFile(file, JSON.stringify(arr, null, 2), "utf8");
       return NextResponse.json(updated);
     } else {
+      // load before
+      const beforeRes = await pool.query("SELECT * FROM public.ausschreibungen WHERE id=$1", [id]);
+      const before = beforeRes.rows[0] ?? null;
       const values = [
         toNull(body.abgabefrist),
         toNull(body.uhrzeit),
@@ -139,6 +168,26 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
 
       const { rows } = await pool.query(sql, values);
       if (!rows[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+      // Audit: update
+      try {
+        const after = rows[0];
+        const session = (await getServerSession(authOptions)) as any;
+        const { ip, userAgent, requestId } = getReqMeta(req);
+        await logAudit(pool, {
+          action: "update",
+          table: "ausschreibungen",
+          rowPk: { id },
+          before,
+          after,
+          actorUserId: session?.user?.id ? Number(session.user.id) : null,
+          actorEmail: session?.user?.email ?? null,
+          ip, userAgent, requestId,
+        });
+      } catch (e) {
+        console.error("[/api/ausschreibungen/[id] PATCH] audit failed", e);
+      }
+
       return NextResponse.json(rows[0]);
     }
   } catch (err: any) {

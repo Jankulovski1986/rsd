@@ -8,10 +8,14 @@
 .btn { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 shadow; }
 .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700; }
 .btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+.btn:disabled { @apply opacity-50 cursor-not-allowed; }
+.btn-primary:disabled { @apply opacity-50 cursor-not-allowed; }
+.btn-success:disabled { @apply opacity-50 cursor-not-allowed; }
 .input { @apply w-full rounded-lg border px-3 py-2; }
 .label { @apply text-sm font-medium text-gray-700; }
 .modal-backdrop { @apply fixed inset-0 bg-black/40; }
 .modal-panel { @apply w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl max-h-[80vh] overflow-y-auto; }
+.modal-panel-narrow { @apply w-auto max-w-sm p-4; }
 
 
 /* immer horizontal scrollen erlauben + Platz für Scrollbar reservieren */

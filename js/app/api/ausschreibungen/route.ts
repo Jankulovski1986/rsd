@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { logAudit, getReqMeta } from "@/lib/audit";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -20,6 +23,7 @@ pool = global._pgPool!;
 
 export const runtime = "nodejs";        // wichtig für pg
 export const dynamic = "force-dynamic"; // kein Caching
+export const revalidate = 0;
 
 export async function GET(req: Request) {
   try {
@@ -132,6 +136,25 @@ export async function POST(req: Request) {
     `;
 
     const { rows } = await pool.query(sql, values);
+
+    // Audit: create
+    try {
+      const created = rows[0];
+      const session = (await getServerSession(authOptions)) as any;
+      const { ip, userAgent, requestId } = getReqMeta(req);
+      await logAudit(pool, {
+        action: "create",
+        table: "ausschreibungen",
+        rowPk: { id: created.id },
+        after: created,
+        actorUserId: session?.user?.id ? Number(session.user.id) : null,
+        actorEmail: session?.user?.email ?? null,
+        ip, userAgent, requestId,
+      });
+    } catch (e) {
+      console.error("[/api/ausschreibungen POST] audit failed", e);
+    }
+
     return NextResponse.json(rows[0], { status: 201 });
   } catch (err: any) {
     console.error("[/api/ausschreibungen POST] ERROR:", err);

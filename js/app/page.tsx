@@ -1,8 +1,12 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSession, signOut } from "next-auth/react";
 import Modal from "@/components/Modal";
 import NewForm from "@/components/NewForm";
 import Kpis from "@/components/Kpis";
+import LoginModal from "@/components/LoginModal";
+import AuditModal from "@/components/AuditModal";
+import InviteUserModal from "@/components/InviteUserModal";
 // import ByMonthChart from "@/components/ByMonthChart";
 
 type Row = {
@@ -35,8 +39,13 @@ type SortDir = "asc" | "desc";
 const FETCH_LIMIT = 5000; // wir holen "genug" für Client-Sort/Filter/Pagination
 
 export default function Page() {
+  const { data: session } = useSession();
+  const role = ((session?.user as any)?.role as string | undefined) ?? 'viewer';
   const [rows, setRows] = useState<Row[]>([]);
   const [openNew, setOpenNew] = useState(false);
+  const [openAuth, setOpenAuth] = useState(false);
+  const [openAudit, setOpenAudit] = useState(false);
+  const [openInvite, setOpenInvite] = useState(false);
 
   // Edit-Zustand
   const [openEdit, setOpenEdit] = useState(false);
@@ -219,6 +228,17 @@ export default function Page() {
     }
   }
 
+  // Links ohne Protokoll (www.example.com) zu http://www.example.com machen
+  function normalizeLinkUrl(href: string): string {
+    const s = String(href ?? "").trim();
+    if (!s) return "";
+    const hasScheme = /^([a-z][a-z0-9+.-]*):\/\//i.test(s);
+    if (hasScheme) return s;
+    if (s.startsWith("www.")) return "http://" + s;
+    if (/^[^/:?#]+(\.[^/:?#]+)+/i.test(s)) return "http://" + s; // example.com[/...]
+    return s;
+  }
+
   // Hervorhebung: Abgabefrist innerhalb der nächsten 7 Tage
   function parseYMD(s: string): Date | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
@@ -324,7 +344,7 @@ export default function Page() {
             placeholder="Suchen in ID, Name, Ort, Kurzbesch., Vergabe-Nr., Link…"
             value={globalQuery}
             onChange={e => setGlobalQuery(e.target.value)}
-            style={{ width: 320 }}
+            style={{ width: 220 }}
           />
         </div>
 
@@ -343,8 +363,27 @@ export default function Page() {
         </div>
 
         {/* <button className="btn-success" onClick={() => setOpenNew(true)}>➕ Neu</button> */}
-        <button className="btn-success" onClick={() => setOpenNew(true)}> <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"> <rect x="11" y="5" width="2" height="14" /> <rect x="5" y="11" width="14" height="2" /> </svg> Neu </button>
-          <button className="btn" onClick={exportCsv}>CSV Export</button>
+        <button className="btn-success" onClick={() => setOpenNew(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}> <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"> <rect x="11" y="5" width="2" height="14" /> <rect x="5" y="11" width="14" height="2" /> </svg> Neu </button>
+        <button className="btn" onClick={exportCsv} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>CSV Export</button>
+        {role === 'viewer' ? (
+          <button className="btn" onClick={()=>setOpenAuth(true)}>Login</button>
+        ) : (
+          <>
+            <span className="text-sm text-gray-600">Rolle: {role}</span>
+            {role === 'admin' && (
+              <>
+                <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
+                <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
+              </>
+            )}
+            <button
+              className="btn"
+              onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}
+            >
+              Logout
+            </button>
+          </>
+        )}
       </div>
     </header>
   );
@@ -438,12 +477,14 @@ export default function Page() {
                       <td className="table-cell">{r.abgegeben ? "Ja" : "Nein"}</td>
                       <td className="table-cell">{r.vergabe_nr ?? ""}</td>
                       <td className="table-cell">
-                        {r.link ? <a className="text-blue-700 underline" href={r.link} target="_blank" rel="noopener noreferrer">{linkText}</a> : ""}
+                        {r.link ? (
+                          <a className="text-blue-700 underline" href={normalizeLinkUrl(r.link)} target="_blank" rel="noopener noreferrer">{linkText}</a>
+                        ) : ""}
                       </td>
                       <td className="table-cell">
                         <div className="flex gap-2">
-                          <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }}>Bearbeiten</button>
-                          <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={busyId === r.id}>
+                          <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Bearbeiten</button>
+                          <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={role === 'viewer' || busyId === r.id} title={role==='viewer' ? 'Nur Lesen' : undefined}>
                             {busyId === r.id ? "Lösche…" : "Löschen"}
                           </button>
                         </div>
@@ -516,9 +557,25 @@ export default function Page() {
           </div>
         </div>
       </Modal>
+
+      {/* Login Modal */}
+      <Modal open={openAuth} onClose={() => setOpenAuth(false)} panelClassName="modal-panel-narrow">
+        <LoginModal onClose={() => setOpenAuth(false)} />
+      </Modal>
+
+      {/* Audit Modal (admin) */}
+      <Modal open={openAudit} onClose={() => setOpenAudit(false)}>
+        <AuditModal onClose={() => setOpenAudit(false)} />
+      </Modal>
+
+      {/* Invite User Modal (admin) */}
+      <Modal open={openInvite} onClose={() => setOpenInvite(false)} panelClassName="modal-panel-narrow">
+        <InviteUserModal onClose={() => setOpenInvite(false)} />
+      </Modal>
     </main>
   );
 }
+
 
 
 

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
 type Mode = "new" | "edit";
 type Row = {
@@ -19,6 +20,8 @@ type Props = {
 };
 
 export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role as string | undefined;
   const [form, setForm] = useState({
     abgabefrist: "", uhrzeit:"", ort:"", name:"", kurzbesch_auftrag:"",
     teilnahme:"", grund_bei_ablehnung:"", bearbeiter:"", bemerkung:"",
@@ -187,7 +190,7 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
 
       <div className="mt-6 flex gap-2 justify-end">
         <button onClick={onCancel} className="btn">Abbrechen</button>
-        <button onClick={save} disabled={busy || !nameValid} className="btn-primary">
+        <button onClick={save} disabled={role==='viewer' || busy || !nameValid} className="btn-primary" title={role==='viewer' ? 'Nur Lesen' : undefined}>
           {busy ? "Speichern…" : "Speichern"}
         </button>
       </div>
