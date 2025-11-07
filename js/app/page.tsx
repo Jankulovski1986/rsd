@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Modal from "@/components/Modal";
+import Link from "next/link";
 import NewForm from "@/components/NewForm";
 import Kpis from "@/components/Kpis";
 import LoginModal from "@/components/LoginModal";
@@ -16,7 +17,7 @@ type SortDir = "asc" | "desc";
 
 const FETCH_LIMIT = 5000;
 const DEFAULT_COLUMNS = [
-  "id","abgabefrist","uhrzeit","ort","name","kurzbesch_auftrag","teilnahme","bearbeiter","abgegeben","vergabe_nr","link"
+  "id","abgabefrist","uhrzeit","ort","name","kurzbesch_auftrag","teilnahme","bearbeiter","abgegeben","vergabe_nr","link","verzeichnis"
 ];
 const LABELS: Record<string,string> = {
   id: "ID",
@@ -30,6 +31,7 @@ const LABELS: Record<string,string> = {
   abgegeben: "Abgegeben",
   vergabe_nr: "Vergabe-Nr.",
   link: "Link",
+  verzeichnis: "Verzeichnis",
   grund_bei_ablehnung: "Grund b. Ablehnung",
   bemerkung: "Bemerkung",
   abholfrist: "Abholfrist",
@@ -240,6 +242,22 @@ export default function Page() {
     if (s.startsWith("www.")) return "http://" + s;
     if (/^[^/:?#]+(\.[^/:?#]+)+/i.test(s)) return "http://" + s;
     return s;
+  }
+
+  function toFileUrl(p: string): string {
+    const s = String(p ?? '').trim();
+    if (!s) return '';
+    // Normalize Windows backslashes to forward slashes for file URI
+    const replaced = s.replace(/\\/g, '/');
+    // Ensure leading slash after file:// for drive letters
+    if (/^[A-Za-z]:\//.test(replaced)) {
+      return 'file:///' + replaced.replace(/^([A-Za-z]):\//, (m, d) => `${d.toUpperCase()}:/`);
+    }
+    // UNC paths: \\server\share -> file:////server/share
+    if (s.startsWith('\\\\')) {
+      return 'file:' + replaced;
+    }
+    return replaced;
   }
 
   // Hervorhebung: Abgabefrist innerhalb der nächsten 7 Tage
@@ -459,6 +477,21 @@ const exportCsv = () => {
                               </td>
                             );
                           }
+                          if (col === 'verzeichnis') {
+                            const p = String(val ?? '');
+                            const parts = p.split(/[\\/]+/).filter(Boolean);
+                            const name = parts.length ? parts[parts.length-1] : '';
+                            const id = r?.id;
+                            return (
+                              <td key={col} className="table-cell">
+                                {id ? (
+                                  <Link className="text-blue-700 underline" href={`/verzeichnis/${id}`} title={p}>
+                                    {name || p || `Ordner ${id}`}
+                                  </Link>
+                                ) : (name || p)}
+                              </td>
+                            );
+                          }
                           if (col === 'abgegeben') {
                             return <td key={col} className="table-cell">{val ? 'Ja' : 'Nein'}</td>;
                           }
@@ -551,7 +584,7 @@ const exportCsv = () => {
           <h2 className="text-xl font-semibold">Wirklich löschen?</h2>
           <p className="text-sm text-gray-700">
             {deleteRow ? (
-              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({String(deleteRow.name)})</> : null} wird dauerhaft gelöscht.</>
+              <>Datensatz ID <b>{deleteRow?.id}</b>{deleteRow?.name ? <> ({String(deleteRow?.name)})</> : null} wird dauerhaft gelöscht.</>
             ) : (
               <>Ausgewählten Datensatz dauerhaft löschen.</>
             )}
@@ -561,7 +594,7 @@ const exportCsv = () => {
             <button className="btn-primary" disabled={!deleteRow || busyId === (deleteRow?.id ?? null)} onClick={async () => {
               if (!deleteRow) return; await doDelete(deleteRow.id); setOpenDelete(false); setDeleteRow(null);
             }}>
-              {deleteRow && busyId === deleteRow.id ? "Lösche…" : "Löschen"}
+              {busyId === (deleteRow?.id ?? null) ? "Lösche…" : "Löschen"}
             </button>
           </div>
         </div>
@@ -587,9 +620,5 @@ const exportCsv = () => {
 
 
   
-
-
-
-
 
 

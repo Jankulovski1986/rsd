@@ -64,13 +64,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "'name' ist erforderlich" }, { status: 400 });
     }
 
-    // Mock-Modus: schreibe in public/mock/ausschreibungen.json statt DB
+    // Base directory for attachments (configurable via AUSSCHREIBUNGEN_BASE_DIR)
+    const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
+
+    // Mock mode: write to public/mock/ausschreibungen.json instead of DB
     if (process.env.USE_MOCK === '1') {
       const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
       const txt = await fs.readFile(file, "utf8").catch(() => "[]");
       const arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
       const now = new Date().toISOString();
       const nextId = arr.reduce((m: number, r: any) => Math.max(m, Number(r?.id ?? 0)), 0) + 1;
+      const verzeichnisAbs = path.join(baseDir, String(nextId));
+      try { await fs.mkdir(verzeichnisAbs, { recursive: true }); } catch {}
       const row = {
         id: nextId,
         abgabefrist: toNull(body.abgabefrist),
@@ -91,6 +96,7 @@ export async function POST(req: Request) {
         ausfuehrung: toNull(body.ausfuehrung),
         vergabe_nr: toNull(body.vergabe_nr),
         link: toNull(body.link),
+        verzeichnis: verzeichnisAbs,
         created_at: now,
         updated_at: now,
       };
@@ -137,9 +143,19 @@ export async function POST(req: Request) {
 
     const { rows } = await pool.query(sql, values);
 
+    // After insert: create directory and store path in 'verzeichnis'
+    const createdRow = rows[0];
+    const dirAbs = path.join(baseDir, String(createdRow.id));
+    try { await fs.mkdir(dirAbs, { recursive: true }); } catch {}
+    const { rows: updRows } = await pool.query(
+      `UPDATE public.ausschreibungen SET verzeichnis=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+      [dirAbs, createdRow.id]
+    );
+    const finalRow = updRows[0] ?? createdRow;
+
     // Audit: create
     try {
-      const created = rows[0];
+      const created = finalRow;
       const session = (await getServerSession(authOptions)) as any;
       const { ip, userAgent, requestId } = getReqMeta(req);
       await logAudit(pool, {
@@ -155,7 +171,7 @@ export async function POST(req: Request) {
       console.error("[/api/ausschreibungen POST] audit failed", e);
     }
 
-    return NextResponse.json(rows[0], { status: 201 });
+    return NextResponse.json(finalRow, { status: 201 });
   } catch (err: any) {
     console.error("[/api/ausschreibungen POST] ERROR:", err);
     return NextResponse.json(

@@ -31,12 +31,18 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
     if (!Number.isFinite(id) || id <= 0) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
+    const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
     if (process.env.USE_MOCK === '1') {
       const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
       const txt = await fs.readFile(file, "utf8").catch(() => "[]");
       const arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
+      const toDelete = arr.find((r: any) => Number(r?.id) === id) || null;
       const next = arr.filter((r: any) => Number(r?.id) !== id);
       await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8");
+      const dirAbs = (toDelete && typeof toDelete.verzeichnis === 'string' && toDelete.verzeichnis)
+        ? toDelete.verzeichnis
+        : path.join(baseDir, String(id));
+      try { await fs.rm(dirAbs, { recursive: true, force: true }); } catch {}
       return NextResponse.json({ ok: true });
     } else {
       // Load before
@@ -44,6 +50,10 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
       if (beforeRes.rowCount === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const before = beforeRes.rows[0];
       await pool.query("DELETE FROM public.ausschreibungen WHERE id=$1", [id]);
+      const dirAbs = (before && typeof (before as any).verzeichnis === 'string' && (before as any).verzeichnis)
+        ? (before as any).verzeichnis as string
+        : path.join(baseDir, String(id));
+      try { await fs.rm(dirAbs, { recursive: true, force: true }); } catch {}
 
       // Audit: delete
       try {
@@ -111,6 +121,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
         ausfuehrung: body.ausfuehrung === undefined ? row.ausfuehrung : toNull(body.ausfuehrung),
         vergabe_nr: body.vergabe_nr === undefined ? row.vergabe_nr : toNull(body.vergabe_nr),
         link: body.link === undefined ? row.link : toNull(body.link),
+        verzeichnis: body.verzeichnis === undefined ? row.verzeichnis : toNull(body.verzeichnis),
         updated_at: new Date().toISOString(),
       };
       arr[idx] = updated;
@@ -139,6 +150,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
         toNull(body.ausfuehrung),
         toNull(body.vergabe_nr),
         toNull(body.link),
+        toNull(body.verzeichnis),
         id,
       ];
 
@@ -161,8 +173,9 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
           zuschlagsfrist = COALESCE($15, zuschlagsfrist),
           ausfuehrung = COALESCE($16, ausfuehrung),
           vergabe_nr = COALESCE($17, vergabe_nr),
-          link = COALESCE($18, link)
-        WHERE id=$19
+          link = COALESCE($18, link),
+          verzeichnis = COALESCE($19, verzeichnis)
+        WHERE id=$20
         RETURNING *
       `;
 

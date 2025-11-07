@@ -35,7 +35,7 @@ export async function GET() {
         : [];
       // Sinnvolle Sortierung: id zuerst, dann bekannte Felder, dann Rest alphabetisch
       const preferred = [
-        'id','abgabefrist','uhrzeit','ort','name','kurzbesch_auftrag','teilnahme','bearbeiter','abgegeben','vergabe_nr','link',
+        'id','abgabefrist','uhrzeit','ort','name','kurzbesch_auftrag','teilnahme','bearbeiter','abgegeben','vergabe_nr','link','verzeichnis',
         'grund_bei_ablehnung','bemerkung','abholfrist','fragefrist','besichtigung','bewertung','zuschlagsfrist','ausfuehrung','created_at','updated_at'
       ];
       const rest = keys.filter(k => !preferred.includes(k)).sort((a,b)=>a.localeCompare(b));
@@ -50,8 +50,14 @@ export async function GET() {
       ORDER BY ordinal_position
     `;
     const { rows } = await pool.query(sql);
-    const cols = rows.map((r: any) => r.column_name as string);
-    return NextResponse.json(cols, { status: 200 });
+    const colsRaw = rows.map((r: any) => r.column_name as string);
+    const preferred = [
+      'id','abgabefrist','uhrzeit','ort','name','kurzbesch_auftrag','teilnahme','bearbeiter','abgegeben','vergabe_nr','link','verzeichnis',
+      'grund_bei_ablehnung','bemerkung','abholfrist','fragefrist','besichtigung','bewertung','zuschlagsfrist','ausfuehrung','created_at','updated_at'
+    ];
+    const rest = colsRaw.filter(k => !preferred.includes(k)).sort((a,b)=>a.localeCompare(b));
+    const ordered = preferred.filter(k => colsRaw.includes(k)).concat(rest);
+    return NextResponse.json(ordered, { status: 200 });
   } catch (err: any) {
     console.error("[/api/ausschreibungen/columns] ERROR:", err);
     return NextResponse.json(
