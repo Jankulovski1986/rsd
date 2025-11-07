@@ -191,12 +191,13 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
       <div className="mt-6 flex gap-2 justify-end">
         <button onClick={onCancel} className="btn">Abbrechen</button>
         <button onClick={save} disabled={role==='viewer' || busy || !nameValid} className="btn-primary" title={role==='viewer' ? 'Nur Lesen' : undefined}>
-          {busy ? "Speichernâ€¦" : "Speichern"}
+          {busy ? "Speichern..." : "Speichern"}
         </button>
       </div>
     </div>
   );
 }
+
 
 
 

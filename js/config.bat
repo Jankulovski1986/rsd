@@ -1,3 +1,5 @@
+@echo off
+chcp 65001 >NUL
 REM ===== config.bat =====
 REM Benutzer/Hosts
 set "VMDB_USER=jan"
@@ -16,3 +18,4 @@ set "APP_DIR=/opt/rsd/js"
 
 REM URL, die im Browser geoeffnet wird
 set "APP_URL=http://192.168.56.12:7777"
+

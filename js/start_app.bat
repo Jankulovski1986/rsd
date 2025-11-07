@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >NUL
 setlocal EnableExtensions EnableDelayedExpansion
 REM ===== start_app.bat =====
 
@@ -86,3 +87,4 @@ for /L %%i in (1,1,%TRIES%) do (
 )
 echo [WARNUNG] SSH %HOST%:%PORT% nicht erreichbar.
 exit /b 0
+
