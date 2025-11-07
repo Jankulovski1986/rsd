@@ -1,4 +1,4 @@
-Ôªø"use client";
+"use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Modal from "@/components/Modal";
@@ -8,7 +8,7 @@ import LoginModal from "@/components/LoginModal";
 import AuditModal from "@/components/AuditModal";
 import InviteUserModal from "@/components/InviteUserModal";
 
-// Dynamischer Row-Typ f√ºr flexible Spalten
+// Dynamischer Row-Typ f¸r flexible Spalten
 type Row = Record<string, any>;
 
 type SortKey = string;
@@ -37,9 +37,9 @@ const LABELS: Record<string,string> = {
   besichtigung: "Besichtigung",
   bewertung: "Bewertung",
   zuschlagsfrist: "Zuschlagsfrist",
-  ausfuehrung: "Ausf√ºhrung",
+  ausfuehrung: "Ausf¸hrung",
   created_at: "Erstellt",
-  updated_at: "Ge√§ndert",
+  updated_at: "Ge‰ndert",
 };
 
 export default function Page() {
@@ -51,7 +51,6 @@ export default function Page() {
   const [openAuth, setOpenAuth] = useState(false);
   const [openAudit, setOpenAudit] = useState(false);
   
-    const [openInvite, setOpenInvite] = useState(false);
   const [openExport, setOpenExport] = useState(false);
 
   // Edit-Zustand
@@ -66,7 +65,7 @@ export default function Page() {
   const [textTitle, setTextTitle] = useState("");
   const [textBody, setTextBody] = useState("");
 
-  // DT-√§hnliche Controls
+  // DT-‰hnliche Controls
   const [globalQuery, setGlobalQuery] = useState("");
   const [pageSize, setPageSize] = useState(50); // 10 | 50 | 100
   const [page, setPage] = useState(1);
@@ -146,19 +145,19 @@ export default function Page() {
     const res = await fetch(`/api/ausschreibungen/${id}`, { method: "DELETE" });
     setBusyId(null);
     if (!res.ok) {
-      alert("L√∂schen fehlgeschlagen.");
+      alert("Lˆschen fehlgeschlagen.");
       return;
     }
     await load();
   }
 
   async function onDelete(id: number) {
-    if (!confirm(`Diesen Datensatz (ID ${id}) wirklich l√∂schen?`)) return;
+    if (!confirm(`Diesen Datensatz (ID ${id}) wirklich lˆschen?`)) return;
     setBusyId(id);
     const res = await fetch(`/api/ausschreibungen/${id}`, { method: "DELETE" });
     setBusyId(null);
     if (!res.ok) {
-      alert("L√∂schen fehlgeschlagen.");
+      alert("Lˆschen fehlgeschlagen.");
       return;
     }
     await load();
@@ -242,7 +241,7 @@ export default function Page() {
     return s;
   }
 
-  // Hervorhebung: Abgabefrist innerhalb der n√§chsten 7 Tage
+  // Hervorhebung: Abgabefrist innerhalb der n‰chsten 7 Tage
   function parseYMD(s: string): Date | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
     if (!m) return null;
@@ -395,11 +394,11 @@ const exportCsv = () => {
   const Pagination = (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm py-2">
       <div>
-        Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Eintr√§gen ‚Äì Seite <b>{currentPage}</b>/<b>{totalPages}</b>
+        Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Eintr‰gen ñ Seite <b>{currentPage}</b>/<b>{totalPages}</b>
       </div>
       <div className="flex items-center gap-2">
-        <button className="btn" onClick={() => setPage(1)} disabled={currentPage === 1}>‚èÆ</button>
-        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>‚óÄ Zur√ºck</button>
+        <button className="btn" onClick={() => setPage(1)} disabled={currentPage === 1}>?</button>
+        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>? Zur¸ck</button>
         <div className="flex items-center gap-1">
           {Array.from({ length: totalPages }).slice(0, 7).map((_, i) => {
             const n = i + 1; if (n > totalPages) return null;
@@ -407,15 +406,15 @@ const exportCsv = () => {
               <button key={n} className={`px-3 py-1 rounded ${n === currentPage ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(n)}>{n}</button>
             );
           })}
-          {totalPages > 7 && <span>‚Ä¶</span>}
+          {totalPages > 7 && <span>Ö</span>}
           {totalPages > 7 && (
             <button className={`px-3 py-1 rounded ${currentPage === totalPages ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(totalPages)}>
               {totalPages}
             </button>
           )}
         </div>
-        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter ‚ñ∂</button>
-        <button className="btn" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>‚è≠</button>
+        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter ?</button>
+        <button className="btn" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>?</button>
       </div>
     </div>
   );
@@ -484,7 +483,7 @@ const exportCsv = () => {
                           <div className="flex gap-2">
                             <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Bearbeiten</button>
                             <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={role === 'viewer' || busyId === (r.id ?? null)} title={role==='viewer' ? 'Nur Lesen' : undefined}>
-                              {busyId === (r.id ?? null) ? "L√∂sche‚Ä¶" : "L√∂schen"}
+                              {busyId === (r.id ?? null) ? "LˆscheÖ" : "Lˆschen"}
                             </button>
                           </div>
                         </td>
@@ -493,7 +492,7 @@ const exportCsv = () => {
                   })}
                   {paged.length === 0 && (
                     <tr>
-                      <td className="table-cell" colSpan={(columns?.length ?? 0) + 1}>Keine Eintr√§ge gefunden.</td>
+                      <td className="table-cell" colSpan={(columns?.length ?? 0) + 1}>Keine Eintr‰ge gefunden.</td>
                     </tr>
                   )}
                 </tbody>
@@ -504,19 +503,19 @@ const exportCsv = () => {
           <div className="px-4 border-t">{Pagination}</div>
           <div className="scroller-x" ref={bottomRef} aria-hidden />
         </div>
-        </section>
+      
 
-<Modal open={openExport} onClose={() => setOpenExport(false)} panelClassName="modal-panel-narrow">
+      <Modal open={openExport} onClose={() => setOpenExport(false)} panelClassName="modal-panel-narrow">
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Export</h2>
-          <p className="text-sm text-gray-700">Bitte Format ausw√§hlen:</p>
+          <p className="text-sm text-gray-700">Bitte Format ausw‰hlen:</p>
           <div className="flex gap-2 justify-end">
             <button className="btn" onClick={() => { setOpenExport(false); exportCsv(); }}>CSV</button>
             <button className="btn-success" onClick={() => { setOpenExport(false); exportXls(); }}>Excel</button>
           </div>
         </div>
       </Modal>
-{/* Volltext-Modal f√ºr lange Kurzbesch./Bemerkung */}
+{/* Volltext-Modal f¸r lange Kurzbesch./Bemerkung */}
       <Modal open={openText} onClose={() => setOpenText(false)}>
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">{textTitle}</h2>
@@ -524,7 +523,7 @@ const exportCsv = () => {
             <pre className="whitespace-pre-wrap break-words">{textBody}</pre>
           </div>
           <div className="flex justify-end">
-            <button className="btn" onClick={() => setOpenText(false)}>Schlie√üen</button>
+            <button className="btn" onClick={() => setOpenText(false)}>Schlieﬂen</button>
           </div>
         </div>
       </Modal>
@@ -548,12 +547,12 @@ const exportCsv = () => {
 
       <Modal open={openDelete} onClose={() => setOpenDelete(false)}>
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Wirklich l√∂schen?</h2>
+          <h2 className="text-xl font-semibold">Wirklich lˆschen?</h2>
           <p className="text-sm text-gray-700">
             {deleteRow ? (
-              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({String(deleteRow.name)})</> : null} wird dauerhaft gel√∂scht.</>
+              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({String(deleteRow.name)})</> : null} wird dauerhaft gelˆscht.</>
             ) : (
-              <>Ausgew√§hlten Datensatz dauerhaft l√∂schen.</>
+              <>Ausgew‰hlten Datensatz dauerhaft lˆschen.</>
             )}
           </p>
           <div className="flex justify-end gap-2">
@@ -561,7 +560,7 @@ const exportCsv = () => {
             <button className="btn-primary" disabled={!deleteRow || busyId === (deleteRow?.id ?? null)} onClick={async () => {
               if (!deleteRow) return; await doDelete(deleteRow.id); setOpenDelete(false); setDeleteRow(null);
             }}>
-              {deleteRow && busyId === deleteRow.id ? "L√∂sche‚Ä¶" : "L√∂schen"}
+              {deleteRow && busyId === deleteRow.id ? "LˆscheÖ" : "Lˆschen"}
             </button>
           </div>
         </div>
@@ -587,9 +586,6 @@ const exportCsv = () => {
 
 
   
-
-
-
 
 
 
