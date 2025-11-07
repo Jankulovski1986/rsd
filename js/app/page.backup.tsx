@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Modal from "@/components/Modal";
@@ -7,46 +7,41 @@ import Kpis from "@/components/Kpis";
 import LoginModal from "@/components/LoginModal";
 import AuditModal from "@/components/AuditModal";
 import InviteUserModal from "@/components/InviteUserModal";
+// import ByMonthChart from "@/components/ByMonthChart";
 
-// Dynamischer Row-Typ für flexible Spalten
-type Row = Record<string, any>;
+type Row = {
+  id: number;
+  abgabefrist: string | null;
+  uhrzeit: string | null;
+  ort: string | null;
+  name: string;
+  kurzbesch_auftrag: string | null;
+  teilnahme: string | null;
+  bearbeiter: string | null;
+  abgegeben: boolean | null;
+  vergabe_nr: string | null;
+  link: string | null;
+  created_at: string;
+  updated_at: string;
+  grund_bei_ablehnung?: string | null;
+  bemerkung?: string | null;
+  abholfrist?: string | null;
+  fragefrist?: string | null;
+  besichtigung?: string | null;
+  bewertung?: string | null;
+  zuschlagsfrist?: string | null;
+  ausfuehrung?: string | null;
+};
 
-type SortKey = string;
+type SortKey = keyof Row;
 type SortDir = "asc" | "desc";
 
-const FETCH_LIMIT = 5000;
-const DEFAULT_COLUMNS = [
-  "id","abgabefrist","uhrzeit","ort","name","kurzbesch_auftrag","teilnahme","bearbeiter","abgegeben","vergabe_nr","link"
-];
-const LABELS: Record<string,string> = {
-  id: "ID",
-  abgabefrist: "Abgabefrist",
-  uhrzeit: "Uhrzeit",
-  ort: "Ort",
-  name: "Name",
-  kurzbesch_auftrag: "Kurzbesch.",
-  teilnahme: "Teilnahme",
-  bearbeiter: "Bearbeiter",
-  abgegeben: "Abgegeben",
-  vergabe_nr: "Vergabe-Nr.",
-  link: "Link",
-  grund_bei_ablehnung: "Grund b. Ablehnung",
-  bemerkung: "Bemerkung",
-  abholfrist: "Abholfrist",
-  fragefrist: "Fragefrist",
-  besichtigung: "Besichtigung",
-  bewertung: "Bewertung",
-  zuschlagsfrist: "Zuschlagsfrist",
-  ausfuehrung: "Ausführung",
-  created_at: "Erstellt",
-  updated_at: "Geändert",
-};
+const FETCH_LIMIT = 5000; // wir holen "genug" für Client-Sort/Filter/Pagination
 
 export default function Page() {
   const { data: session } = useSession();
   const role = ((session?.user as any)?.role as string | undefined) ?? 'viewer';
   const [rows, setRows] = useState<Row[]>([]);
-  const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [openNew, setOpenNew] = useState(false);
   const [openAuth, setOpenAuth] = useState(false);
   const [openAudit, setOpenAudit] = useState(false);
@@ -59,11 +54,6 @@ export default function Page() {
   const [openDelete, setOpenDelete] = useState(false);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
 
-  // Long-text preview modal
-  const [openText, setOpenText] = useState(false);
-  const [textTitle, setTextTitle] = useState("");
-  const [textBody, setTextBody] = useState("");
-
   // DT-ähnliche Controls
   const [globalQuery, setGlobalQuery] = useState("");
   const [pageSize, setPageSize] = useState(50); // 10 | 50 | 100
@@ -71,7 +61,7 @@ export default function Page() {
   const [sortKey, setSortKey] = useState<SortKey>("abgabefrist");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  // Scrollbars
+  // Scrollbars (deine bestehende Logik bleibt)
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -82,7 +72,7 @@ export default function Page() {
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [rows, columns]);
+  }, [rows]);
 
   useEffect(() => {
     const top = topRef.current, bottom = bottomRef.current;
@@ -122,22 +112,8 @@ export default function Page() {
     }
   }
 
-  async function loadColumns() {
-    try {
-      const res = await fetch('/api/ausschreibungen/columns', { cache: 'no-store' });
-      if (!res.ok) return;
-      const cols = await res.json();
-      if (Array.isArray(cols) && cols.length) {
-        setColumns(cols);
-        if (!cols.includes(sortKey)) {
-          setSortKey(cols.includes('abgabefrist') ? 'abgabefrist' : cols[0]);
-        }
-      }
-    } catch {}
-  }
-
-  useEffect(() => { load(); loadColumns(); }, []);
-  useEffect(() => { const t = setInterval(() => { load(); }, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); }, []);
+  useEffect(() => { const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
 
   async function doDelete(id: number) {
     setBusyId(id);
@@ -162,46 +138,55 @@ export default function Page() {
     await load();
   }
 
-  // Filter
+  // ---- DT-ähnliche Logik: Filter → Sort → Paginate ----
   const filtered = useMemo(() => {
     const q = globalQuery.trim().toLowerCase();
     if (!q) return rows;
-    const cols = columns && columns.length ? columns : DEFAULT_COLUMNS;
     return rows.filter(r => {
-      const values = cols.map(c => String(r?.[c] ?? ""));
-      return values.some(f => f.toLowerCase().includes(q));
+      const fields = [
+        r.id?.toString() ?? "",
+        r.abgabefrist ?? "",
+        r.uhrzeit ?? "",
+        r.ort ?? "",
+        r.name ?? "",
+        r.kurzbesch_auftrag ?? "",
+        r.teilnahme ?? "",
+        r.bearbeiter ?? "",
+        r.vergabe_nr ?? "",
+        r.link ?? ""
+      ];
+      return fields.some(f => f.toLowerCase().includes(q));
     });
-  }, [rows, globalQuery, columns]);
+  }, [rows, globalQuery]);
 
-  // Sort
   const sorted = useMemo(() => {
     const data = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
 
-    data.sort((a, b) => {
-      const va = a?.[sortKey];
-      const vb = b?.[sortKey];
+    const getVal = (r: Row, key: SortKey) => (r[key] ?? null);
 
+    data.sort((a, b) => {
+      const va = getVal(a, sortKey);
+      const vb = getVal(b, sortKey);
+
+      // Nulls immer ans Ende (wie DataTables ungefähr handhabt)
       const aNull = va === null || va === undefined || va === "";
       const bNull = vb === null || vb === undefined || vb === "";
       if (aNull && bNull) return 0;
       if (aNull) return 1;
       if (bNull) return -1;
 
-      // Date-ish columns
+      // Datumsvergleich für YYYY-MM-DD Strings
       if (sortKey.includes("frist") || sortKey === "created_at" || sortKey === "updated_at" || sortKey === "abgabefrist") {
         const da = new Date(String(va));
         const db = new Date(String(vb));
-        return (da.getTime() - db.getTime()) * dir;
+        const cmp = da.getTime() - db.getTime();
+        return cmp * dir;
       }
 
+      // Numerisch vs. lexikografisch
       if (typeof va === "number" && typeof vb === "number") {
         return (va - vb) * dir;
-      }
-
-      // booleans
-      if (typeof va === "boolean" && typeof vb === "boolean") {
-        return (Number(va) - Number(vb)) * dir;
       }
 
       return String(va).localeCompare(String(vb), "de", { numeric: true }) * dir;
@@ -217,26 +202,40 @@ export default function Page() {
     return sorted.slice(start, start + pageSize);
   }, [sorted, currentPage, pageSize]);
 
-  useEffect(() => { setPage(1); }, [globalQuery, sortKey, sortDir, pageSize]);
+  useEffect(() => {
+    // Bei Filter/Sort Seitenzahl zurücksetzen
+    setPage(1);
+  }, [globalQuery, sortKey, sortDir, pageSize]);
 
   function toggleSort(k: SortKey) {
-    if (k === sortKey) setSortDir(d => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir("asc"); }
+    if (k === sortKey) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir("asc");
+    }
   }
 
   // Nur die Root/Domain als Linktext anzeigen
   function linkLabel(href: string): string {
-    try { const u = new URL(href); return u.host; }
-    catch { const s = String(href ?? ""); const s2 = s.replace(/^https?:\/\//i, ""); return s2.split("/")[0] || s; }
+    try {
+      const u = new URL(href);
+      return u.host;
+    } catch {
+      const s = String(href ?? "");
+      const s2 = s.replace(/^https?:\/\//i, "");
+      return s2.split("/")[0] || s;
+    }
   }
 
+  // Links ohne Protokoll (www.example.com) zu http://www.example.com machen
   function normalizeLinkUrl(href: string): string {
     const s = String(href ?? "").trim();
     if (!s) return "";
     const hasScheme = /^([a-z][a-z0-9+.-]*):\/\//i.test(s);
     if (hasScheme) return s;
     if (s.startsWith("www.")) return "http://" + s;
-    if (/^[^/:?#]+(\.[^/:?#]+)+/i.test(s)) return "http://" + s;
+    if (/^[^/:?#]+(\.[^/:?#]+)+/i.test(s)) return "http://" + s; // example.com[/...]
     return s;
   }
 
@@ -246,11 +245,13 @@ export default function Page() {
     if (!m) return null;
     return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   }
+
   function isDueSoon(dateStr?: string | null): boolean {
     if (!dateStr) return false;
     const due = parseYMD(String(dateStr));
     if (!due) return false;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
     return diffDays >= 0 && diffDays <= 7;
   }
@@ -258,38 +259,66 @@ export default function Page() {
   const SortHeader = ({ label, k }: { label: string; k: SortKey }) => {
     const active = sortKey === k;
     return (
-      <button className="table-cell text-left text-sm font-semibold select-none" onClick={() => toggleSort(k)} title="Sortieren">
+      <button
+        className="table-cell text-left text-sm font-semibold select-none"
+        onClick={() => toggleSort(k)}
+        title="Sortieren"
+      >
         <span className="inline-flex items-center gap-1">
           {label}
-          <span className="opacity-70">{active ? (sortDir === "asc" ? "▲" : "▼") : "⇅"}</span>
+          <span className="opacity-70">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
         </span>
       </button>
     );
   };
 
-  const LONG_THRESHOLD = 300; // ~60 chars * 5 lines
-
-  function openFullText(title: string, body: string) {
-    setTextTitle(title); setTextBody(body); setOpenText(true);
-  }
-
-  // CSV export (dynamische Spalten)
+  // CSV export of filtered + sorted rows (all, not just page)
   const exportCsv = () => {
     const rowsToExport = sorted;
-    if (!rowsToExport || rowsToExport.length === 0) { alert("Keine Daten fuer Export vorhanden."); return; }
-    const cols = columns && columns.length ? columns : DEFAULT_COLUMNS;
-    const headers = cols.map(c => LABELS[c] ?? c);
+    if (!rowsToExport || rowsToExport.length === 0) {
+      alert("Keine Daten fuer Export vorhanden.");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Abgabefrist",
+      "Uhrzeit",
+      "Ort",
+      "Name",
+      "Kurzbesch.",
+      "Teilnahme",
+      "Bearbeiter",
+      "Abgegeben",
+      "Vergabe-Nr.",
+      "Link",
+    ];
+
     const esc = (v: unknown): string => {
       const s0 = String(v ?? "");
       const needsQuote = s0.includes(";") || s0.includes("\n") || s0.includes("\r") || s0.includes('"');
       if (needsQuote) return '"' + s0.replace(/"/g, '""') + '"';
       return s0;
     };
+
     const lines = [headers.join(";")];
     for (const r of rowsToExport) {
-      lines.push(cols.map(c => c === 'abgegeben' ? esc(r[c] ? "Ja" : "Nein") : esc(r[c])).join(";"));
+      lines.push([
+        esc(r.id),
+        esc(r.abgabefrist ?? ""),
+        esc(r.uhrzeit ?? ""),
+        esc(r.ort ?? ""),
+        esc(r.name ?? ""),
+        esc(r.kurzbesch_auftrag ?? ""),
+        esc(r.teilnahme ?? ""),
+        esc(r.bearbeiter ?? ""),
+        esc(r.abgegeben ? "Ja" : "Nein"),
+        esc(r.vergabe_nr ?? ""),
+        esc(r.link ?? ""),
+      ].join(";"));
     }
-    const content = "\ufeff" + lines.join("\n");
+
+    const content = "\ufeff" + lines.join("\n"); // UTF-8 BOM for Excel
     const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -307,35 +336,52 @@ export default function Page() {
       <h1 className="text-2xl font-semibold">Ausschreibungen</h1>
 
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
+        {/* Suche */}
         <div className="flex items-center gap-2">
           <label className="text-sm whitespace-nowrap">Suche:</label>
-          <input className="input" placeholder="Suche in allen Spalten" value={globalQuery} onChange={e => setGlobalQuery(e.target.value)} style={{ width: 220 }} />
+          <input
+            className="input"
+            placeholder="Suchen in ID, Name, Ort, Kurzbesch., Vergabe-Nr., Link…"
+            value={globalQuery}
+            onChange={e => setGlobalQuery(e.target.value)}
+            style={{ width: 220 }}
+          />
         </div>
 
+        {/* Page-Length Dropdown wie DataTables */}
         <div className="flex items-center gap-2">
           <label className="text-sm whitespace-nowrap">Zeilen pro Seite:</label>
-          <select className="input" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+          <select
+            className="input"
+            value={pageSize}
+            onChange={e => setPageSize(Number(e.target.value))}
+          >
             <option value={10}>10</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
           </select>
         </div>
 
-        <button className="btn-success" onClick={() => setOpenNew(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="11" y="5" width="2" height="14" /><rect x="5" y="11" width="14" height="2" /></svg>
-          Neu
-        </button>
+        {/* <button className="btn-success" onClick={() => setOpenNew(true)}>➕ Neu</button> */}
+        <button className="btn-success" onClick={() => setOpenNew(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}> <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"> <rect x="11" y="5" width="2" height="14" /> <rect x="5" y="11" width="14" height="2" /> </svg> Neu </button>
         <button className="btn" onClick={exportCsv} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>CSV Export</button>
         {role === 'viewer' ? (
           <button className="btn" onClick={()=>setOpenAuth(true)}>Login</button>
         ) : (
           <>
             <span className="text-sm text-gray-600">Rolle: {role}</span>
-            {role === 'admin' && (<>
-              <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
-              <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
-            </>)}
-            <button className="btn" onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}>Logout</button>
+            {role === 'admin' && (
+              <>
+                <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
+                <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
+              </>
+            )}
+            <button
+              className="btn"
+              onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}
+            >
+              Logout
+            </button>
           </>
         )}
       </div>
@@ -345,26 +391,39 @@ export default function Page() {
   const Pagination = (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm py-2">
       <div>
-        Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Einträgen – Seite <b>{currentPage}</b>/<b>{totalPages}</b>
+        Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Einträgen · Seite <b>{currentPage}</b>/<b>{totalPages}</b>
       </div>
       <div className="flex items-center gap-2">
         <button className="btn" onClick={() => setPage(1)} disabled={currentPage === 1}>⏮</button>
-        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>◀ Zurück</button>
+        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>‹ Zurück</button>
+
+        {/* einfache Seitennavigation (kompakt) */}
         <div className="flex items-center gap-1">
           {Array.from({ length: totalPages }).slice(0, 7).map((_, i) => {
-            const n = i + 1; if (n > totalPages) return null;
+            const n = i + 1;
+            if (n > totalPages) return null;
             return (
-              <button key={n} className={`px-3 py-1 rounded ${n === currentPage ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(n)}>{n}</button>
+              <button
+                key={n}
+                className={`px-3 py-1 rounded ${n === currentPage ? "bg-blue-600 text-white" : "bg-white shadow"}`}
+                onClick={() => setPage(n)}
+              >
+                {n}
+              </button>
             );
           })}
           {totalPages > 7 && <span>…</span>}
           {totalPages > 7 && (
-            <button className={`px-3 py-1 rounded ${currentPage === totalPages ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(totalPages)}>
+            <button
+              className={`px-3 py-1 rounded ${currentPage === totalPages ? "bg-blue-600 text-white" : "bg-white shadow"}`}
+              onClick={() => setPage(totalPages)}
+            >
               {totalPages}
             </button>
           )}
         </div>
-        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter ▶</button>
+
+        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter ›</button>
         <button className="btn" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>⏭</button>
       </div>
     </div>
@@ -378,72 +437,64 @@ export default function Page() {
         <div className="lg:col-span-3"><Kpis /></div>
 
         <div className="lg:col-span-3 bg-white rounded-2xl shadow">
+          {/* Top Pagination */}
           <div className="px-4">{Pagination}</div>
 
+          {/* Scrollbereich */}
           <div className="scroller-x" ref={topRef}>
             <div className="min-w-max" ref={contentRef}>
               <table className="min-w-full">
                 <thead className="bg-gray-100">
                   <tr>
-                    {columns.map(col => (
-                      <th key={col}><SortHeader label={LABELS[col] ?? col} k={col} /></th>
-                    ))}
+                    <th><SortHeader label="ID" k="id" /></th>
+                    <th><SortHeader label="Abgabefrist" k="abgabefrist" /></th>
+                    <th><SortHeader label="Uhrzeit" k="uhrzeit" /></th>
+                    <th><SortHeader label="Ort" k="ort" /></th>
+                    <th><SortHeader label="Name" k="name" /></th>
+                    <th><SortHeader label="Kurzbesch." k="kurzbesch_auftrag" /></th>
+                    <th><SortHeader label="Teilnahme" k="teilnahme" /></th>
+                    <th><SortHeader label="Bearbeiter" k="bearbeiter" /></th>
+                    <th><SortHeader label="Abgegeben" k="abgegeben" /></th>
+                    <th><SortHeader label="Vergabe-Nr." k="vergabe_nr" /></th>
+                    <th className="table-cell text-left text-sm font-semibold">Link</th>
                     <th className="table-cell text-left text-sm font-semibold">Aktionen</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paged.map(r => {
-                    const highlight = isDueSoon(r?.abgabefrist ?? "");
+                    const highlight = isDueSoon(r.abgabefrist ?? "");
+                    const linkText = r.link ? linkLabel(r.link) : "";
                     return (
-                      <tr key={r.id ?? JSON.stringify(r)} className={highlight ? "bg-yellow-100" : "odd:bg-white even:bg-gray-50"}>
-                        {columns.map(col => {
-                          const val = r?.[col];
-                          if (col === 'link') {
-                            return (
-                              <td key={col} className="table-cell">
-                                {val ? (
-                                  <a className="text-blue-700 underline" href={normalizeLinkUrl(String(val))} target="_blank" rel="noopener noreferrer">
-                                    {linkLabel(String(val))}
-                                  </a>
-                                ) : ''}
-                              </td>
-                            );
-                          }
-                          if (col === 'abgegeben') {
-                            return <td key={col} className="table-cell">{val ? 'Ja' : 'Nein'}</td>;
-                          }
-                          if (col === 'kurzbesch_auftrag' || col === 'bemerkung') {
-                            const text = String(val ?? '');
-                            const long = text.length > LONG_THRESHOLD;
-                            const title = col === 'kurzbesch_auftrag' ? 'Kurzbeschreibung' : 'Bemerkung';
-                            return (
-                              <td key={col} className="table-cell align-top">
-                                <div
-                                  className={`wrap-60ch clamp-5 ${long ? 'cursor-pointer hover:underline' : ''}`}
-                                  onClick={long ? () => openFullText(title, text) : undefined}
-                                  title={long ? 'Volltext anzeigen' : undefined}
-                                >
-                                  {text}
-                                </div>
-                              </td>
-                            );
-                          }
-                          return <td key={col} className="table-cell">{String(val ?? '')}</td>;
-                        })}
-                        <td className="table-cell">
-                          <div className="flex gap-2">
-                            <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Bearbeiten</button>
-                            <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={role === 'viewer' || busyId === (r.id ?? null)} title={role==='viewer' ? 'Nur Lesen' : undefined}>
-                              {busyId === (r.id ?? null) ? "Lösche…" : "Löschen"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
+                    <tr key={r.id} className={highlight ? "bg-yellow-100" : "odd:bg-white even:bg-gray-50"}>
+                      <td className="table-cell">{r.id}</td>
+                      <td className="table-cell">{r.abgabefrist ?? ""}</td>
+                      <td className="table-cell">{r.uhrzeit ?? ""}</td>
+                      <td className="table-cell">{r.ort ?? ""}</td>
+                      <td className="table-cell">{r.name}</td>
+                      <td className="table-cell">{r.kurzbesch_auftrag ?? ""}</td>
+                      <td className="table-cell">{r.teilnahme ?? ""}</td>
+                      <td className="table-cell">{r.bearbeiter ?? ""}</td>
+                      <td className="table-cell">{r.abgegeben ? "Ja" : "Nein"}</td>
+                      <td className="table-cell">{r.vergabe_nr ?? ""}</td>
+                      <td className="table-cell">
+                        {r.link ? (
+                          <a className="text-blue-700 underline" href={normalizeLinkUrl(r.link)} target="_blank" rel="noopener noreferrer">{linkText}</a>
+                        ) : ""}
+                      </td>
+                      <td className="table-cell">
+                        <div className="flex gap-2">
+                          <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Bearbeiten</button>
+                          <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={role === 'viewer' || busyId === r.id} title={role==='viewer' ? 'Nur Lesen' : undefined}>
+                            {busyId === r.id ? "Lösche…" : "Löschen"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
                   })}
                   {paged.length === 0 && (
                     <tr>
-                      <td className="table-cell" colSpan={(columns?.length ?? 0) + 1}>Keine Einträge gefunden.</td>
+                      <td className="table-cell" colSpan={12}>Keine Einträge gefunden.</td>
                     </tr>
                   )}
                 </tbody>
@@ -451,24 +502,15 @@ export default function Page() {
             </div>
           </div>
 
+          {/* Bottom Pagination (gesynct via Scroll-Handler) */}
           <div className="px-4 border-t">{Pagination}</div>
           <div className="scroller-x" ref={bottomRef} aria-hidden />
         </div>
+
+        {/* <ByMonthChart /> */}
       </section>
 
-      {/* Volltext-Modal für lange Kurzbesch./Bemerkung */}
-      <Modal open={openText} onClose={() => setOpenText(false)}>
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">{textTitle}</h2>
-          <div className="border rounded p-3 bg-gray-50 max-h-[60vh] overflow-y-auto">
-            <pre className="whitespace-pre-wrap break-words">{textBody}</pre>
-          </div>
-          <div className="flex justify-end">
-            <button className="btn" onClick={() => setOpenText(false)}>Schließen</button>
-          </div>
-        </div>
-      </Modal>
-
+      {/* Neu */}
       <Modal open={openNew} onClose={() => setOpenNew(false)}>
         <NewForm
           mode="new"
@@ -477,6 +519,7 @@ export default function Page() {
         />
       </Modal>
 
+      {/* Edit */}
       <Modal open={openEdit} onClose={() => setOpenEdit(false)}>
         <NewForm
           mode="edit"
@@ -486,38 +529,56 @@ export default function Page() {
         />
       </Modal>
 
+      {/* Delete Confirm */}
       <Modal open={openDelete} onClose={() => setOpenDelete(false)}>
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Wirklich löschen?</h2>
           <p className="text-sm text-gray-700">
             {deleteRow ? (
-              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({String(deleteRow.name)})</> : null} wird dauerhaft gelöscht.</>
+              <>Datensatz ID <b>{deleteRow.id}</b>{deleteRow.name ? <> ({deleteRow.name})</> : null} wird dauerhaft gelöscht.</>
             ) : (
               <>Ausgewählten Datensatz dauerhaft löschen.</>
             )}
           </p>
           <div className="flex justify-end gap-2">
             <button className="btn" onClick={() => setOpenDelete(false)}>Abbrechen</button>
-            <button className="btn-primary" disabled={!deleteRow || busyId === (deleteRow?.id ?? null)} onClick={async () => {
-              if (!deleteRow) return; await doDelete(deleteRow.id); setOpenDelete(false); setDeleteRow(null);
-            }}>
+            <button
+              className="btn-primary"
+              disabled={!deleteRow || busyId === (deleteRow?.id ?? null)}
+              onClick={async () => {
+                if (!deleteRow) return;
+                await doDelete(deleteRow.id);
+                setOpenDelete(false);
+                setDeleteRow(null);
+              }}
+            >
               {deleteRow && busyId === deleteRow.id ? "Lösche…" : "Löschen"}
             </button>
           </div>
         </div>
       </Modal>
 
+      {/* Login Modal */}
       <Modal open={openAuth} onClose={() => setOpenAuth(false)} panelClassName="modal-panel-narrow">
         <LoginModal onClose={() => setOpenAuth(false)} />
       </Modal>
 
+      {/* Audit Modal (admin) */}
       <Modal open={openAudit} onClose={() => setOpenAudit(false)}>
         <AuditModal onClose={() => setOpenAudit(false)} />
       </Modal>
 
+      {/* Invite User Modal (admin) */}
       <Modal open={openInvite} onClose={() => setOpenInvite(false)} panelClassName="modal-panel-narrow">
         <InviteUserModal onClose={() => setOpenInvite(false)} />
       </Modal>
     </main>
   );
 }
+
+
+
+
+
+
+

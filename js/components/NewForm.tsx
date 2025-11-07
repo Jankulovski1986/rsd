@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
@@ -128,9 +128,9 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
             <div className="text-sm text-red-600 mt-1">Bitte einen Namen eingeben.</div>
           )}
         </div>
-        <div>
+        <div className="md:col-span-2">
           <label className="label">Kurzbesch. Auftrag</label>
-          <input className="input" value={form.kurzbesch_auftrag} onChange={e=>set("kurzbesch_auftrag", e.target.value)} />
+          <textarea className="input" rows={3} value={form.kurzbesch_auftrag} onChange={e=>set("kurzbesch_auftrag", e.target.value)} />
         </div>
         <div>
           <label className="label">Teilnahme?</label>
@@ -191,10 +191,14 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
       <div className="mt-6 flex gap-2 justify-end">
         <button onClick={onCancel} className="btn">Abbrechen</button>
         <button onClick={save} disabled={role==='viewer' || busy || !nameValid} className="btn-primary" title={role==='viewer' ? 'Nur Lesen' : undefined}>
-          {busy ? "Speichern…" : "Speichern"}
+          {busy ? "Speichernâ€¦" : "Speichern"}
         </button>
       </div>
     </div>
   );
 }
+
+
+
+
 

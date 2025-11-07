@@ -35,3 +35,7 @@
 .scroller-x::-webkit-scrollbar{ height: 12px; }
 .scroller-x::-webkit-scrollbar-thumb{ background: rgba(0,0,0,.3); border-radius: 8px; }
 .scroller-x::-webkit-scrollbar-track{ background: rgba(0,0,0,.06); }
+
+/* Wrapped multi-line helpers for long text cells */
+.wrap-60ch { max-width: 60ch; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.clamp-5 { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
