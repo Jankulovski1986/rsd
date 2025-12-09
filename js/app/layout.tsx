@@ -4,7 +4,10 @@ import AuthProvider from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "Ausschreibungen",
-  description: "Tabelle + Neu-Modal + KPIs"
+  description: "Tabelle + Neu-Modal + KPIs",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

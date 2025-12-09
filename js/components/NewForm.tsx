@@ -129,17 +129,17 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
           )}
         </div>
         <div className="md:col-span-2">
-          <label className="label">Kurzbesch. Auftrag</label>
+          <label className="label">Kurzbeschreibung Auftrag</label>
           <textarea className="input" rows={3} value={form.kurzbesch_auftrag} onChange={e=>set("kurzbesch_auftrag", e.target.value)} />
         </div>
         <div>
-          <label className="label">Teilnahme?</label>
+          <label className="label">Teilnahme</label>
           <select className="input" value={form.teilnahme} onChange={e=>set("teilnahme", e.target.value)}>
             <option value=""></option><option>Ja</option><option>Nein</option><option>Unklar</option>
           </select>
         </div>
         <div>
-          <label className="label">Grund b. Ablehnung</label>
+          <label className="label">Grund bei Ablehnung</label>
           <input className="input" value={form.grund_bei_ablehnung} onChange={e=>set("grund_bei_ablehnung", e.target.value)} />
         </div>
         <div>

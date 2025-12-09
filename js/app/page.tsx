@@ -3,11 +3,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Modal from "@/components/Modal";
 import Link from "next/link";
+import Image from "next/image";
 import NewForm from "@/components/NewForm";
 import Kpis from "@/components/Kpis";
 import LoginModal from "@/components/LoginModal";
 import AuditModal from "@/components/AuditModal";
 import InviteUserModal from "@/components/InviteUserModal";
+import LogoImg from "../images/rsd_logo_lang.png";
 
 // Dynamischer Row-Typ für flexible Spalten
 type Row = Record<string, any>;
@@ -25,14 +27,14 @@ const LABELS: Record<string,string> = {
   uhrzeit: "Uhrzeit",
   ort: "Ort",
   name: "Name",
-  kurzbesch_auftrag: "Kurzbesch.",
+  kurzbesch_auftrag: "Kurzbeschreibung",
   teilnahme: "Teilnahme",
   bearbeiter: "Bearbeiter",
   abgegeben: "Abgegeben",
   vergabe_nr: "Vergabe-Nr.",
   link: "Link",
   verzeichnis: "Verzeichnis",
-  grund_bei_ablehnung: "Grund b. Ablehnung",
+  grund_bei_ablehnung: "Grund bei Ablehnung",
   bemerkung: "Bemerkung",
   abholfrist: "Abholfrist",
   fragefrist: "Fragefrist",
@@ -45,7 +47,8 @@ const LABELS: Record<string,string> = {
 };
 
 export default function Page() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const loadingSession = status === "loading";
   const role = ((session?.user as any)?.role as string | undefined) ?? 'viewer';
   const [rows, setRows] = useState<Row[]>([]);
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
@@ -62,6 +65,9 @@ export default function Page() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [openBulkDelete, setOpenBulkDelete] = useState(false);
 
   // Long-text preview modal
   const [openText, setOpenText] = useState(false);
@@ -73,6 +79,7 @@ export default function Page() {
   const [pageSize, setPageSize] = useState(50); // 10 | 50 | 100
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>("abgabefrist");
+  const [hideOverdueUnsubmitted, setHideOverdueUnsubmitted] = useState(true);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Scrollbars
@@ -168,14 +175,17 @@ export default function Page() {
 
   // Filter
   const filtered = useMemo(() => {
+    const base = hideOverdueUnsubmitted
+      ? rows.filter(r => !isOverdue(r?.abgabefrist ?? "", r?.abgegeben))
+      : rows;
     const q = globalQuery.trim().toLowerCase();
-    if (!q) return rows;
+    if (!q) return base;
     const cols = columns && columns.length ? columns : DEFAULT_COLUMNS;
-    return rows.filter(r => {
+    return base.filter(r => {
       const values = cols.map(c => String(r?.[c] ?? ""));
       return values.some(f => f.toLowerCase().includes(q));
     });
-  }, [rows, globalQuery, columns]);
+  }, [rows, globalQuery, columns, hideOverdueUnsubmitted]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -221,11 +231,50 @@ export default function Page() {
     return sorted.slice(start, start + pageSize);
   }, [sorted, currentPage, pageSize]);
 
+  // Checkbox header/row helpers
+  const headerCbxRef = useRef<HTMLInputElement>(null);
+  const visibleIds = useMemo(() => paged.map(r => Number(r?.id)).filter(n => Number.isFinite(n)), [paged]);
+  const allFilteredIds = useMemo(() => sorted.map(r => Number(r?.id)).filter(n => Number.isFinite(n)), [sorted]);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+  const allFilteredSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.has(id));
+  const someVisibleSelected = visibleIds.some(id => selectedIds.has(id));
+  useEffect(() => {
+    const el = headerCbxRef.current; if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
+  }, [allVisibleSelected, someVisibleSelected]);
+
   useEffect(() => { setPage(1); }, [globalQuery, sortKey, sortDir, pageSize]);
 
   function toggleSort(k: SortKey) {
     if (k === sortKey) setSortDir(d => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(k); setSortDir("asc"); }
+  }
+
+  function toggleHeaderSelect() {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      const ids = visibleIds;
+      const all = ids.length > 0 && ids.every(id => next.has(id));
+      if (all) { ids.forEach(id => next.delete(id)); }
+      else { ids.forEach(id => next.add(id)); }
+      return next;
+    });
+  }
+
+  function toggleRowSelect(id: number, checked: boolean) {
+    setSelectedIds(prev => { const next = new Set(prev); checked ? next.add(id) : next.delete(id); return next; });
+  }
+
+  async function doBulkDelete(ids: number[]) {
+    for (const id of ids) { await doDelete(id); }
+    setSelectedIds(new Set());
+  }
+
+  function selectAllFiltered() {
+    setSelectedIds(new Set(allFilteredIds));
+  }
+
+  function selectOnlyVisible() {
+    setSelectedIds(new Set(visibleIds));
   }
 
   // Nur die Root/Domain als Linktext anzeigen
@@ -260,6 +309,27 @@ export default function Page() {
     return replaced;
   }
 
+  const DATE_ONLY_COLUMNS = new Set([
+    'abgabefrist',
+    'abholfrist',
+    'fragefrist',
+    'besichtigung',
+    'zuschlagsfrist',
+  ]);
+  const DATETIME_COLUMNS = new Set(['created_at', 'updated_at']);
+
+  function formatDateValue(value: unknown, withTime: boolean): string {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const datePart = `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`;
+    return withTime
+      ? `${datePart} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+      : datePart;
+  }
+
   // Hervorhebung: Abgabefrist innerhalb der nächsten 7 Tage
   function parseYMD(s: string): Date | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
@@ -274,6 +344,14 @@ export default function Page() {
     const diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
     return diffDays >= 0 && diffDays <= 7;
   }
+  function isOverdue(dateStr?: string | null, submitted?: boolean): boolean {
+    if (submitted) return false;
+    if (!dateStr) return false;
+    const due = parseYMD(String(dateStr));
+    if (!due) return false;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return due.getTime() < today.getTime();
+  }
 
   const SortHeader = ({ label, k }: { label: string; k: SortKey }) => {
     const active = sortKey === k;
@@ -281,7 +359,17 @@ export default function Page() {
       <button className="table-cell text-left text-sm font-semibold select-none" onClick={() => toggleSort(k)} title="Sortieren">
         <span className="inline-flex items-center gap-1">
           {label}
-          <span className="opacity-70">{active ? (sortDir === "asc" ? "ASC" : "DESC") : ""}</span>
+          {active && (
+            sortDir === 'asc' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" className="opacity-70" aria-label="aufsteigend">
+                <path d="M7 14l5-5 5 5H7z" fill="currentColor"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" className="opacity-70" aria-label="absteigend">
+                <path d="M7 10l5 5 5-5H7z" fill="currentColor"/>
+              </svg>
+            )
+          )}
         </span>
       </button>
     );
@@ -370,42 +458,42 @@ const exportCsv = () => {
     URL.revokeObjectURL(url);
   };
 
-  const HeaderBar = (
-    <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      <h1 className="text-2xl font-semibold">Ausschreibungen</h1>
-
-      <div className="flex flex-col md:flex-row gap-3 md:items-center">
-        <div className="flex items-center gap-2">
-          <label className="text-sm whitespace-nowrap">Suche:</label>
-          <input className="input" placeholder="Suche in allen Spalten" value={globalQuery} onChange={e => setGlobalQuery(e.target.value)} style={{ width: 220 }} />
+      const HeaderBar = (
+    <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4 md:flex-1">
+          <Image src={LogoImg} alt="RSD Logo" className="h-16 w-auto object-contain" priority />
+          <h1 className="text-2xl sm:text-3xl font-semibold sm:flex-1 sm:text-left md:text-center">Ausschreibungen</h1>
         </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-sm whitespace-nowrap">Zeilen pro Seite:</label>
-          <select className="input" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
-            <option value={10}>10</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end md:ml-4 min-h-[40px]">
+          {loadingSession ? (
+            <div className="flex flex-wrap items-center gap-2 animate-pulse">
+              <div className="h-10 w-20 rounded-xl bg-gray-200" />
+              <div className="h-10 w-24 rounded-xl bg-gray-200" />
+              <div className="h-10 w-16 rounded-xl bg-gray-200" />
+              <div className="h-10 w-20 rounded-xl bg-gray-200" />
+              <div className="h-10 w-20 rounded-xl bg-gray-200" />
+            </div>
+          ) : (
+            <>
+              <button className="btn-success" onClick={() => setOpenNew(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>
+                + Neu
+              </button>
+              {role === 'viewer' ? (
+                <button className="btn" onClick={()=>setOpenAuth(true)}>Login</button>
+              ) : (
+                <>
+                  {role === 'admin' && (<>
+                    <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
+                    <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
+                  </>)}
+                  <button className="btn" onClick={() => setOpenExport(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Export</button>
+                  <button className="btn" onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}>Logout</button>
+                </>
+              )}
+            </>
+          )}
         </div>
-
-        <button className="btn-success" onClick={() => setOpenNew(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="11" y="5" width="2" height="14" /><rect x="5" y="11" width="14" height="2" /></svg>
-          Neu
-        </button>
-        <button className="btn" onClick={() => setOpenExport(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Export</button>
-        {role === 'viewer' ? (
-          <button className="btn" onClick={()=>setOpenAuth(true)}>Login</button>
-        ) : (
-          <>
-            <span className="text-sm text-gray-600">Rolle: {role}</span>
-            {role === 'admin' && (<>
-              <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
-              <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
-            </>)}
-            <button className="btn" onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}>Logout</button>
-          </>
-        )}
       </div>
     </header>
   );
@@ -413,11 +501,22 @@ const exportCsv = () => {
   const Pagination = (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm py-2">
       <div>
-        Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Einträgen – Seite <b>{currentPage}</b>/<b>{totalPages}</b>
+        <div>
+          Zeige <b>{paged.length}</b> von <b>{totalRows}</b> Einträgen - Seite <b>{currentPage}</b>/<b>{totalPages}</b>
+        </div>
+        {(selectedIds.size > 0 && role !== 'viewer') ? (
+          <div className="mt-1 flex items-center gap-2 text-gray-700">
+            <button className="btn" onClick={() => setOpenBulkDelete(true)} title="Ausgewählte löschen">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <path d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1l-1.1 12.1A3 3 0 0 1 14.91 22H9.09a3 3 0 0 1-2.99-2.9L5 7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Zm1 2v0h4V5h-4Zm-2.9 2 1 12.1A1 1 0 0 0 9.09 20h5.82a1 1 0 0 0 .99-.9L17.9 7H7.1ZM10 9a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Z" />
+              </svg>
+            </button>
+            <span>{selectedIds.size} ausgewählt</span>
+          </div>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
-        <button className="btn" onClick={() => setPage(1)} disabled={currentPage === 1}>⏮</button>
-        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>◀ Zurück</button>
+        <button className="btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>← Zurück</button>
         <div className="flex items-center gap-1">
           {Array.from({ length: totalPages }).slice(0, 7).map((_, i) => {
             const n = i + 1; if (n > totalPages) return null;
@@ -425,25 +524,49 @@ const exportCsv = () => {
               <button key={n} className={`px-3 py-1 rounded ${n === currentPage ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(n)}>{n}</button>
             );
           })}
-          {totalPages > 7 && <span>…</span>}
+          {totalPages > 7 && <span>.</span>}
           {totalPages > 7 && (
             <button className={`px-3 py-1 rounded ${currentPage === totalPages ? "bg-blue-600 text-white" : "bg-white shadow"}`} onClick={() => setPage(totalPages)}>
               {totalPages}
             </button>
           )}
         </div>
-        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter ▶</button>
+        <button className="btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Weiter →</button>
         <button className="btn" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>⏭</button>
       </div>
     </div>
   );
 
-  return (
-    <main className="max-w-7xl mx-auto p-6 space-y-6">
+  return (<main className="max-w-7xl mx-auto p-6 space-y-6">
       {HeaderBar}
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-3"><Kpis /></div>
+        <div className="lg:col-span-3 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between bg-white rounded-2xl shadow px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button className="btn" onClick={() => setPage(1)} disabled={currentPage === 1}>⏮</button>
+            <label className="text-sm whitespace-nowrap">Suche:</label>
+            <input className="input" placeholder="Suche in allen Spalten" value={globalQuery} onChange={e => setGlobalQuery(e.target.value)} style={{ width: 220 }} />
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="checkbox"
+                checked={hideOverdueUnsubmitted}
+                onChange={e => { setHideOverdueUnsubmitted(e.target.checked); setPage(1); }}
+              />
+              Abgelaufene ausblenden
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm whitespace-nowrap">Zeilen pro Seite:</label>
+            <select className="input" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
 
         <div className="lg:col-span-3 bg-white rounded-2xl shadow">
           <div className="px-4">{Pagination}</div>
@@ -453,22 +576,30 @@ const exportCsv = () => {
               <table className="min-w-full">
                 <thead className="bg-gray-100">
                   <tr>
+                    <th className="w-10 text-left">
+                      <input ref={headerCbxRef} type="checkbox" className="checkbox" onChange={toggleHeaderSelect} checked={allVisibleSelected} disabled={role === 'viewer'} />
+                    </th>
                     {columns.map(col => (
-                      <th key={col}><SortHeader label={LABELS[col] ?? col} k={col} /></th>
+                      <th key={col} className="text-left"><SortHeader label={LABELS[col] ?? col} k={col} /></th>
                     ))}
                     <th className="table-cell text-left text-sm font-semibold">Aktionen</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paged.map(r => {
-                    const highlight = isDueSoon(r?.abgabefrist ?? "");
+                    const overdue = isOverdue(r?.abgabefrist ?? "", r?.abgegeben);
+                    const highlight = !overdue && !r?.abgegeben && isDueSoon(r?.abgabefrist ?? "");
+                    const rowClass = overdue ? "bg-red-100" : highlight ? "bg-yellow-100" : "odd:bg-white even:bg-gray-50";
                     return (
-                      <tr key={r.id ?? JSON.stringify(r)} className={highlight ? "bg-yellow-100" : "odd:bg-white even:bg-gray-50"}>
+                      <tr key={r.id ?? JSON.stringify(r)} className={rowClass}>
+                        <td className="table-cell text-left">
+                          <input type="checkbox" className="checkbox" checked={selectedIds.has(Number(r?.id))} onChange={e => toggleRowSelect(Number(r?.id), e.currentTarget.checked)} disabled={role === 'viewer'} />
+                        </td>
                         {columns.map(col => {
                           const val = r?.[col];
                           if (col === 'link') {
                             return (
-                              <td key={col} className="table-cell">
+                              <td key={col} className="table-cell text-left">
                                 {val ? (
                                   <a className="text-blue-700 underline" href={normalizeLinkUrl(String(val))} target="_blank" rel="noopener noreferrer">
                                     {linkLabel(String(val))}
@@ -483,7 +614,7 @@ const exportCsv = () => {
                             const name = parts.length ? parts[parts.length-1] : '';
                             const id = r?.id;
                             return (
-                              <td key={col} className="table-cell">
+                              <td key={col} className="table-cell text-left">
                                 {id ? (
                                   <Link className="text-blue-700 underline" href={`/verzeichnis/${id}`} title={p}>
                                     {name || p || `Ordner ${id}`}
@@ -493,14 +624,14 @@ const exportCsv = () => {
                             );
                           }
                           if (col === 'abgegeben') {
-                            return <td key={col} className="table-cell">{val ? 'Ja' : 'Nein'}</td>;
+                            return <td key={col} className="table-cell text-left">{val ? 'Ja' : 'Nein'}</td>;
                           }
                           if (col === 'kurzbesch_auftrag' || col === 'bemerkung') {
                             const text = String(val ?? '');
                             const long = text.length > LONG_THRESHOLD;
                             const title = col === 'kurzbesch_auftrag' ? 'Kurzbeschreibung' : 'Bemerkung';
                             return (
-                              <td key={col} className="table-cell align-top">
+                              <td key={col} className="table-cell align-top text-left">
                                 <div
                                   className={`wrap-60ch clamp-5 ${long ? 'cursor-pointer hover:underline' : ''}`}
                                   onClick={long ? () => openFullText(title, text) : undefined}
@@ -511,9 +642,13 @@ const exportCsv = () => {
                               </td>
                             );
                           }
-                          return <td key={col} className="table-cell">{String(val ?? '')}</td>;
+                          if (DATE_ONLY_COLUMNS.has(col) || DATETIME_COLUMNS.has(col)) {
+                            const formatted = formatDateValue(val, DATETIME_COLUMNS.has(col));
+                            return <td key={col} className="table-cell text-left">{formatted}</td>;
+                          }
+                          return <td key={col} className="table-cell text-left">{String(val ?? '')}</td>;
                         })}
-                        <td className="table-cell">
+                        <td className="table-cell text-left">
                           <div className="flex gap-2">
                             <button className="btn" onClick={() => { setSelected(r); setOpenEdit(true); }} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Bearbeiten</button>
                             <button className="btn" onClick={() => { setDeleteRow(r); setOpenDelete(true); }} disabled={role === 'viewer' || busyId === (r.id ?? null)} title={role==='viewer' ? 'Nur Lesen' : undefined}>
@@ -526,7 +661,7 @@ const exportCsv = () => {
                   })}
                   {paged.length === 0 && (
                     <tr>
-                      <td className="table-cell" colSpan={(columns?.length ?? 0) + 1}>Keine Einträge gefunden.</td>
+                      <td className="table-cell text-left" colSpan={(columns?.length ?? 0) + 2}>Keine Einträge gefunden.</td>
                     </tr>
                   )}
                 </tbody>
@@ -558,6 +693,19 @@ const exportCsv = () => {
           </div>
           <div className="flex justify-end">
             <button className="btn" onClick={() => setOpenText(false)}>Schließen</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={openBulkDelete} onClose={() => setOpenBulkDelete(false)}>
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">{selectedIds.size} Datensätze löschen?</h2>
+          <p className="text-sm text-gray-700">Diese Aktion kann nicht rückgängig gemacht werden.</p>
+          <div className="flex justify-end gap-2">
+            <button className="btn" onClick={() => setOpenBulkDelete(false)}>Abbrechen</button>
+            <button className="btn-primary" disabled={selectedIds.size===0} onClick={async ()=>{ await doBulkDelete(Array.from(selectedIds)); setOpenBulkDelete(false); }}>
+              Löschen
+            </button>
           </div>
         </div>
       </Modal>
@@ -620,5 +768,32 @@ const exportCsv = () => {
 
 
   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
