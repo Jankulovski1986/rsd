@@ -8,7 +8,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { sendInvite } from "@/lib/mailer";
 import { logAudit, getReqMeta } from "@/lib/audit";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 
 const pool = new Pool({
   host: process.env.PGHOST,
@@ -83,4 +83,3 @@ export async function POST(req: Request) {
     client.release();
   }
 }
-

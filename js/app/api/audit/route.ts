@@ -5,7 +5,7 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 
 const pool = new Pool({
   host: process.env.PGHOST,
@@ -80,4 +80,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ data: list.rows, total: Number(cnt.rows[0]?.n ?? 0), limit, offset });
 }
-
