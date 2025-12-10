@@ -59,7 +59,8 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
       headers.set("content-length", String(data.byteLength));
       const disp = inline ? 'inline' : 'attachment';
       headers.set("content-disposition", `${disp}; filename="${encodeURIComponent(safeName)}"`);
-      return new Response(data, { status: 200, headers });
+      const body = new Uint8Array(data);
+      return new Response(body, { status: 200, headers });
     }
 
     // List directory
