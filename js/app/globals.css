@@ -16,12 +16,14 @@
 .modal-backdrop { @apply fixed inset-0 bg-black/40; }
 .modal-panel { @apply w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl max-h-[80vh] overflow-y-auto; }
 .modal-panel-narrow { @apply w-auto max-w-sm p-4; }
+.modal-panel-no-scroll { max-height: calc(100vh - 40px); overflow: hidden; }
+.modal-panel-wide-no-scroll { max-width: 1200px; width: 95vw; max-height: calc(100vh - 40px); overflow: hidden; }
 
 
 /* immer horizontal scrollen erlauben + Platz für Scrollbar reservieren */
 .scroller-x{
   overflow-x: scroll;           /* nicht auto → Leiste bleibt „verfügbar“ */
-  overflow-y: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable both-edges; /* verhindert Layout-Sprung */
   -webkit-overflow-scrolling: touch;
 }

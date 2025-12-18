@@ -71,7 +71,7 @@ export default function AuditModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="w-[95vw] max-w-[1100px]">
-      <h2 className="text-xl font-semibold mb-3">Audit</h2>
+      <h2 className="text-xl font-semibold mb-3">Aktivitäten</h2>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
         <div>
@@ -159,4 +159,3 @@ export default function AuditModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-

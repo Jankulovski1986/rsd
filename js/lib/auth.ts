@@ -23,6 +23,17 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Passwort", type: "password" },
       },
       async authorize(creds) {
+        // In Mock-Modus jeden Login akzeptieren und als Admin durchlassen,
+        // damit die UI ohne DB laeuft.
+        if (process.env.USE_MOCK === '1') {
+          return {
+            id: '1',
+            email: creds?.email || 'mock@example.com',
+            name: 'Mock User',
+            role: 'admin',
+          } as any;
+        }
+
         if (!creds?.email || !creds?.password) return null;
         const { rows } = await pool.query(
           `SELECT id, email, name, pass_hash, role, status FROM users WHERE email=$1`,

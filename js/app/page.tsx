@@ -80,6 +80,7 @@ export default function Page() {
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>("abgabefrist");
   const [hideOverdueUnsubmitted, setHideOverdueUnsubmitted] = useState(true);
+  const [hideSubmitted, setHideSubmitted] = useState(true);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Scrollbars
@@ -175,9 +176,12 @@ export default function Page() {
 
   // Filter
   const filtered = useMemo(() => {
-    const base = hideOverdueUnsubmitted
+    let base = hideOverdueUnsubmitted
       ? rows.filter(r => !isOverdue(r?.abgabefrist ?? "", r?.abgegeben))
       : rows;
+    if (hideSubmitted) {
+      base = base.filter(r => !r?.abgegeben);
+    }
     const q = globalQuery.trim().toLowerCase();
     if (!q) return base;
     const cols = columns && columns.length ? columns : DEFAULT_COLUMNS;
@@ -185,14 +189,25 @@ export default function Page() {
       const values = cols.map(c => String(r?.[c] ?? ""));
       return values.some(f => f.toLowerCase().includes(q));
     });
-  }, [rows, globalQuery, columns, hideOverdueUnsubmitted]);
+  }, [rows, globalQuery, columns, hideOverdueUnsubmitted, hideSubmitted]);
 
   // Sort
   const sorted = useMemo(() => {
     const data = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
 
+    const priority = (row: any) => {
+      const open = !row?.abgegeben;
+      if (open && isOverdue(row?.abgabefrist ?? "", row?.abgegeben)) return 0; // rot
+      if (open && isDueSoon(row?.abgabefrist ?? "")) return 1; // gelb
+      return 2; // Rest
+    };
+
     data.sort((a, b) => {
+      const pa = priority(a);
+      const pb = priority(b);
+      if (pa !== pb) return pa - pb;
+
       const va = a?.[sortKey];
       const vb = b?.[sortKey];
 
@@ -242,7 +257,7 @@ export default function Page() {
     const el = headerCbxRef.current; if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
   }, [allVisibleSelected, someVisibleSelected]);
 
-  useEffect(() => { setPage(1); }, [globalQuery, sortKey, sortDir, pageSize]);
+  useEffect(() => { setPage(1); }, [globalQuery, sortKey, sortDir, pageSize, hideOverdueUnsubmitted, hideSubmitted]);
 
   function toggleSort(k: SortKey) {
     if (k === sortKey) setSortDir(d => (d === "asc" ? "desc" : "asc"));
@@ -485,7 +500,7 @@ const exportCsv = () => {
                 <>
                   {role === 'admin' && (<>
                     <button className="btn-success" onClick={()=>setOpenInvite(true)}>+ Benutzer</button>
-                    <button className="btn" onClick={()=>setOpenAudit(true)}>Audit</button>
+                    <button className="btn" onClick={()=>setOpenAudit(true)}>Aktivitäten</button>
                   </>)}
                   <button className="btn" onClick={() => setOpenExport(true)} disabled={role === 'viewer'} title={role==='viewer' ? 'Nur Lesen' : undefined}>Export</button>
                   <button className="btn" onClick={async ()=>{ await signOut({ redirect: false }); window.location.reload(); }}>Logout</button>
@@ -556,6 +571,15 @@ const exportCsv = () => {
               />
               Abgelaufene ausblenden
             </label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="checkbox"
+                checked={hideSubmitted}
+                onChange={e => { setHideSubmitted(e.target.checked); setPage(1); }}
+              />
+              Abgegebene ausblenden
+            </label>
           </div>
 
           <div className="flex items-center gap-2">
@@ -571,10 +595,10 @@ const exportCsv = () => {
         <div className="lg:col-span-3 bg-white rounded-2xl shadow">
           <div className="px-4">{Pagination}</div>
 
-          <div className="scroller-x" ref={topRef}>
+          <div className="scroller-x max-h-[70vh] overflow-auto" ref={topRef}>
             <div className="min-w-max" ref={contentRef}>
               <table className="min-w-full">
-                <thead className="bg-gray-100">
+                <thead className="bg-gray-100 sticky top-0 z-20">
                   <tr>
                     <th className="w-10 text-left">
                       <input ref={headerCbxRef} type="checkbox" className="checkbox" onChange={toggleHeaderSelect} checked={allVisibleSelected} disabled={role === 'viewer'} />
@@ -668,11 +692,10 @@ const exportCsv = () => {
               </table>
             </div>
           </div>
-
-          <div className="px-4 border-t">{Pagination}</div>
-          <div className="scroller-x" ref={bottomRef} aria-hidden />
-        </div>
-        </section>
+        <div className="px-4 border-t">{Pagination}</div>
+        <div className="scroller-x" ref={bottomRef} aria-hidden />
+      </div>
+    </section>
 
 <Modal open={openExport} onClose={() => setOpenExport(false)} panelClassName="modal-panel-narrow">
         <div className="space-y-4">
@@ -685,7 +708,7 @@ const exportCsv = () => {
         </div>
       </Modal>
 {/* Volltext-Modal für lange Kurzbesch./Bemerkung */}
-      <Modal open={openText} onClose={() => setOpenText(false)}>
+      <Modal open={openText} onClose={() => setOpenText(false)} panelClassName="modal-panel-no-scroll">
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">{textTitle}</h2>
           <div className="border rounded p-3 bg-gray-50 max-h-[60vh] overflow-y-auto">
@@ -752,7 +775,7 @@ const exportCsv = () => {
         <LoginModal onClose={() => setOpenAuth(false)} />
       </Modal>
 
-      <Modal open={openAudit} onClose={() => setOpenAudit(false)}>
+      <Modal open={openAudit} onClose={() => setOpenAudit(false)} panelClassName="modal-panel-wide-no-scroll">
         <AuditModal onClose={() => setOpenAudit(false)} />
       </Modal>
 
@@ -768,21 +791,6 @@ const exportCsv = () => {
 
 
   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

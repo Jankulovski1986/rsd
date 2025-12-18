@@ -130,7 +130,12 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
         </div>
         <div className="md:col-span-2">
           <label className="label">Kurzbeschreibung Auftrag</label>
-          <textarea className="input" rows={3} value={form.kurzbesch_auftrag} onChange={e=>set("kurzbesch_auftrag", e.target.value)} />
+          <textarea
+            className="input h-32 max-h-60 resize-y overflow-y-auto"
+            rows={4}
+            value={form.kurzbesch_auftrag}
+            onChange={e=>set("kurzbesch_auftrag", e.target.value)}
+          />
         </div>
         <div>
           <label className="label">Teilnahme</label>
@@ -148,7 +153,12 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
         </div>
         <div className="md:col-span-2">
           <label className="label">Bemerkung</label>
-          <textarea className="input" rows={3} value={form.bemerkung} onChange={e=>set("bemerkung", e.target.value)} />
+          <textarea
+            className="input h-32 max-h-60 resize-y overflow-y-auto"
+            rows={4}
+            value={form.bemerkung}
+            onChange={e=>set("bemerkung", e.target.value)}
+          />
         </div>
         <div>
           <label className="label">Abgegeben</label>
@@ -197,7 +207,6 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
     </div>
   );
 }
-
 
 
 

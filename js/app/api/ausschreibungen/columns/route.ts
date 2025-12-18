@@ -38,8 +38,8 @@ export async function GET() {
         'id','abgabefrist','uhrzeit','ort','name','kurzbesch_auftrag','teilnahme','bearbeiter','abgegeben','vergabe_nr','link','verzeichnis',
         'grund_bei_ablehnung','bemerkung','abholfrist','fragefrist','besichtigung','bewertung','zuschlagsfrist','ausfuehrung','created_at','updated_at'
       ];
-      const rest = keys.filter(k => !preferred.includes(k)).sort((a,b)=>a.localeCompare(b));
-      const ordered = preferred.filter(k => keys.includes(k)).concat(rest);
+      // Immer Preferred zuerst aufführen, fehlende Keys in den Daten werden trotzdem angezeigt (leere Zellen)
+      const ordered = unique([...preferred, ...keys]);
       return NextResponse.json(ordered, { status: 200 });
     }
 
