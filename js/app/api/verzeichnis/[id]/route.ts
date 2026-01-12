@@ -1,17 +1,40 @@
 import { NextResponse } from "next/server";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { Pool } from "pg";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function safeJoin(base: string, id: string) {
-  const target = path.join(base, id);
-  const normBase = path.resolve(base) + path.sep;
-  const normTarget = path.resolve(target) + path.sep;
-  if (!normTarget.startsWith(normBase)) throw new Error("Path traversal");
-  return path.resolve(target);
+const useMock = process.env.USE_MOCK === "1";
+const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), "data");
+const baseResolved = path.resolve(baseDir);
+
+let pool: Pool | null = null;
+declare global { var _pgPoolVerzeichnis: Pool | undefined }
+if (!useMock) {
+  if (!global._pgPoolVerzeichnis) {
+    global._pgPoolVerzeichnis = new Pool({
+      host: process.env.PGHOST,
+      port: Number(process.env.PGPORT ?? 5432),
+      database: process.env.PGDATABASE,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      ssl: process.env.PGSSL === "require" ? { rejectUnauthorized: false } : undefined,
+    });
+  }
+  pool = global._pgPoolVerzeichnis!;
+}
+
+function ensureWithinBase(p: string) {
+  const resolved = path.resolve(p);
+  if (resolved !== baseResolved && !resolved.startsWith(baseResolved + path.sep)) {
+    throw new Error("Invalid directory path");
+  }
+  return resolved;
 }
 
 function getMime(n: string): string {
@@ -32,12 +55,39 @@ function getMime(n: string): string {
   }
 }
 
+async function getRowById(id: string) {
+  const idStr = String(id);
+  if (!idStr) return null;
+  if (useMock) {
+    const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
+    const txt = await fs.readFile(file, "utf8").catch(() => "[]");
+    let arr: any[] = [];
+    try { arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : []; } catch { arr = []; }
+    return arr.find((r: any) => String(r?.id) === idStr) ?? null;
+  }
+  const { rows } = await pool!.query("SELECT * FROM public.ausschreibungen WHERE id=$1", [idStr]);
+  return rows[0] ?? null;
+}
+
+function resolveDir(row: any, id: string) {
+  const raw = (row && typeof row.verzeichnis === "string" && row.verzeichnis.trim()) ? row.verzeichnis : path.join(baseResolved, String(id));
+  return ensureWithinBase(raw);
+}
+
 export async function GET(req: Request, ctx: { params: { id: string } }) {
   try {
-    const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
     const id = String(ctx.params.id ?? "");
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const dir = safeJoin(baseDir, id);
+
+    const row = await getRowById(id);
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    let dir: string;
+    try { dir = resolveDir(row, id); }
+    catch { return NextResponse.json({ error: "Invalid directory path" }, { status: 400 }); }
+
+    const dirStat = await fs.stat(dir).catch(() => null);
+    const dirExists = !!dirStat && dirStat.isDirectory();
 
     const { searchParams } = new URL(req.url);
     const name = searchParams.get("name");
@@ -47,10 +97,8 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
       // Stream a single file (safe basename only, no subfolders)
       const safeName = path.basename(name);
       const filePath = path.join(dir, safeName);
-      try {
-        const st = await fs.stat(filePath);
-        if (!st.isFile()) return NextResponse.json({ error: "Not a file" }, { status: 400 });
-      } catch {
+      const st = await fs.stat(filePath).catch(() => null);
+      if (!st || !st.isFile()) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       const data = await fs.readFile(filePath);
@@ -63,24 +111,24 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
       return new Response(body, { status: 200, headers });
     }
 
-    // List directory
-    let entries: any[] = [];
-    try {
-      const dirents = await fs.readdir(dir, { withFileTypes: true });
-      entries = await Promise.all(dirents.map(async (d) => {
-        const p = path.join(dir, d.name);
-        const st = await fs.stat(p).catch(() => null);
-        return {
-          name: d.name,
-          isDir: d.isDirectory(),
-          size: st?.size ?? 0,
-          mtime: st?.mtime?.toISOString?.() ?? null,
-        };
-      }));
-    } catch {
-      entries = [];
+    if (!dirExists) {
+      const dirName = path.basename(dir);
+      return NextResponse.json({ entries: [], dirName, missing: true }, { status: 200 });
     }
-    return NextResponse.json(entries, { status: 200 });
+
+    const dirents = await fs.readdir(dir, { withFileTypes: true });
+    const entries = await Promise.all(dirents.map(async (d) => {
+      const p = path.join(dir, d.name);
+      const st = await fs.stat(p).catch(() => null);
+      return {
+        name: d.name,
+        isDir: d.isDirectory(),
+        size: st?.size ?? 0,
+        mtime: st?.mtime?.toISOString?.() ?? null,
+      };
+    }));
+    const dirName = path.basename(dir);
+    return NextResponse.json({ entries, dirName, missing: false }, { status: 200 });
   } catch (err: any) {
     console.error("[/api/verzeichnis/[id]] ERROR:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -89,10 +137,25 @@ export async function GET(req: Request, ctx: { params: { id: string } }) {
 
 export async function POST(req: Request, ctx: { params: { id: string } }) {
   try {
-    const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
     const id = String(ctx.params.id ?? "");
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const dir = safeJoin(baseDir, id);
+
+    const row = await getRowById(id);
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    let dir: string;
+    try { dir = resolveDir(row, id); }
+    catch { return NextResponse.json({ error: "Invalid directory path" }, { status: 400 }); }
+
+    const dirStat = await fs.stat(dir).catch(() => null);
+    if (dirStat && !dirStat.isDirectory()) {
+      return NextResponse.json({ error: "Target exists but is not a directory" }, { status: 400 });
+    }
+    if (!dirStat) {
+      await fs.mkdir(dir, { recursive: true }).catch((e) => {
+        throw new Error(`Directory could not be created: ${String(e?.message ?? e)}`);
+      });
+    }
 
     const form = await req.formData().catch(() => null);
     if (!form) return NextResponse.json({ error: "Invalid form-data" }, { status: 400 });
@@ -102,9 +165,6 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
       .concat(form.getAll('file') as any[]);
     const files = items.filter((f) => f && typeof (f as any).arrayBuffer === 'function' && typeof (f as any).name === 'string');
     if (!files.length) return NextResponse.json({ error: "No files provided" }, { status: 400 });
-
-    // Ensure target directory exists
-    await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
     const saved: string[] = [];
     const errors: { name: string; error: string }[] = [];
@@ -143,6 +203,38 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     return NextResponse.json({ saved, errors }, { status: 200 });
   } catch (err: any) {
     console.error("[/api/verzeichnis/[id] POST] ERROR:", err);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request, ctx: { params: { id: string } }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const id = String(ctx.params.id ?? "");
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+    const { searchParams } = new URL(req.url);
+    const name = searchParams.get("name");
+    if (!name) return NextResponse.json({ error: "Missing name" }, { status: 400 });
+
+    const row = await getRowById(id);
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    let dir: string;
+    try { dir = resolveDir(row, id); }
+    catch { return NextResponse.json({ error: "Invalid directory path" }, { status: 400 }); }
+
+    const safeName = path.basename(name);
+    const filePath = path.join(dir, safeName);
+    const st = await fs.stat(filePath).catch(() => null);
+    if (!st || !st.isFile()) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    await fs.unlink(filePath);
+    return NextResponse.json({ deleted: true });
+  } catch (err: any) {
+    console.error("[/api/verzeichnis/[id] DELETE] ERROR:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

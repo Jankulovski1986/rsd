@@ -1,6 +1,7 @@
 ﻿"use client";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import Modal from "./Modal";
 
 type Mode = "new" | "edit";
 type Row = {
@@ -10,6 +11,7 @@ type Row = {
   bearbeiter?: string | null; bemerkung?: string | null; abgegeben?: boolean | null;
   abholfrist?: string | null; fragefrist?: string | null; besichtigung?: string | null; bewertung?: string | null;
   zuschlagsfrist?: string | null; ausfuehrung?: string | null; vergabe_nr?: string | null; link?: string | null;
+  verzeichnis?: string | null;
 };
 
 type Props = {
@@ -26,10 +28,13 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
     abgabefrist: "", uhrzeit:"", ort:"", name:"", kurzbesch_auftrag:"",
     teilnahme:"", grund_bei_ablehnung:"", bearbeiter:"", bemerkung:"",
     abgegeben:false, abholfrist:"", fragefrist:"", besichtigung:"",
-    bewertung:"", zuschlagsfrist:"", ausfuehrung:"", vergabe_nr:"", link:""
+    bewertung:"", zuschlagsfrist:"", ausfuehrung:"", vergabe_nr:"", link:"",
+    ordnername:""
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [conflictPayload, setConflictPayload] = useState<any | null>(null);
+  const [showConflict, setShowConflict] = useState(false);
   const nameValid = (form.name ?? "").trim().length > 0;
 
   // Initialwerte für Edit
@@ -53,7 +58,8 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
       zuschlagsfrist: initial.zuschlagsfrist ?? "",
       ausfuehrung: initial.ausfuehrung ?? "",
       vergabe_nr: initial.vergabe_nr ?? "",
-      link: initial.link ?? ""
+      link: initial.link ?? "",
+      ordnername: initial.verzeichnis ? initial.verzeichnis.split(/[\\/]/).pop() ?? "" : ""
     });
   }, [initial]);
 
@@ -64,32 +70,40 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
     }
     setBusy(true); setErr(null);
 
+    const doSave = async (payload: any, allowConflict: boolean): Promise<boolean> => {
+      const res = await fetch(
+        mode === "new"
+          ? "/api/ausschreibungen"
+          : `/api/ausschreibungen/${initial?.id}`,
+        {
+          method: mode === "new" ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }
+      );
+      if (res.ok) return true;
+      const j = await res.json().catch(()=>({error:"Fehler"}));
+      if (allowConflict && j?.code === "folder_exists") {
+        setConflictPayload({ ...payload, useExisting: true });
+        setShowConflict(true);
+        return false;
+      }
+      setErr(j.error || "Fehler beim Speichern.");
+      return false;
+    };
+
     const payload = {
       ...form,
       abgabefrist: form.abgabefrist || null,
       abholfrist: form.abholfrist || null,
       fragefrist: form.fragefrist || null,
-      zuschlagsfrist: form.zuschlagsfrist || null
+      zuschlagsfrist: form.zuschlagsfrist || null,
+      ordnername: form.ordnername || null
     };
 
-    const res = await fetch(
-      mode === "new"
-        ? "/api/ausschreibungen"
-        : `/api/ausschreibungen/${initial?.id}`,
-      {
-        method: mode === "new" ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
-
+    const ok = await doSave(payload, true);
     setBusy(false);
-    if (!res.ok) {
-      const j = await res.json().catch(()=>({error:"Fehler"}));
-      setErr(j.error || "Fehler beim Speichern.");
-    } else {
-      onSaved();
-    }
+    if (ok) onSaved();
   }
 
   const set = (k: string, v: any) => setForm(s => ({...s, [k]: v}));
@@ -127,6 +141,15 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
           {!nameValid && err && (
             <div className="text-sm text-red-600 mt-1">Bitte einen Namen eingeben.</div>
           )}
+        </div>
+        <div>
+          <label className="label">Ordnername (optional)</label>
+          <input
+            className="input"
+            value={form.ordnername}
+            onChange={e=>set("ordnername", e.target.value)}
+            placeholder="leer lassen = ID verwenden"
+          />
         </div>
         <div className="md:col-span-2">
           <label className="label">Kurzbeschreibung Auftrag</label>
@@ -204,6 +227,44 @@ export default function NewForm({ mode, initial, onSaved, onCancel }: Props) {
           {busy ? "Speichern..." : "Speichern"}
         </button>
       </div>
+
+      <Modal open={showConflict} onClose={() => { if (!busy) setShowConflict(false); }}>
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">Ordner existiert bereits</h3>
+          <p>Der gewünschte Ordnername ist schon vorhanden. Soll der bestehende Ordner verwendet werden?</p>
+          <div className="flex gap-2 justify-end">
+            <button className="btn" onClick={() => { if (!busy) { setShowConflict(false); setConflictPayload(null); }}}>Abbrechen</button>
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={async () => {
+                if (!conflictPayload) { setShowConflict(false); return; }
+                setBusy(true);
+                const ok = await (async () => {
+                  const res = await fetch(
+                    mode === "new" ? "/api/ausschreibungen" : `/api/ausschreibungen/${initial?.id}`,
+                    {
+                      method: mode === "new" ? "POST" : "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(conflictPayload)
+                    }
+                  );
+                  if (res.ok) return true;
+                  const j = await res.json().catch(()=>({error:"Fehler"}));
+                  setErr(j.error || "Fehler beim Speichern.");
+                  return false;
+                })();
+                setBusy(false);
+                setShowConflict(false);
+                setConflictPayload(null);
+                if (ok) onSaved();
+              }}
+            >
+              Bestehenden Ordner verwenden
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

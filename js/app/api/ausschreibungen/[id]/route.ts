@@ -6,6 +6,11 @@ import { logAudit, getReqMeta } from "@/lib/audit";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+const sanitizeFolderName = (v: unknown) => {
+  if (typeof v !== "string") return "";
+  return v.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+};
+
 // Reuse the global pool pattern like in parent route
 let pool: Pool;
 declare global { var _pgPool2: Pool | undefined }
@@ -27,17 +32,15 @@ export const revalidate = 0;
 
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   try {
-    const id = Number(ctx.params.id);
-    if (!Number.isFinite(id) || id <= 0) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-    }
+    const id = String(ctx.params.id ?? "").trim();
+    if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
     if (process.env.USE_MOCK === '1') {
       const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
       const txt = await fs.readFile(file, "utf8").catch(() => "[]");
       const arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
-      const toDelete = arr.find((r: any) => Number(r?.id) === id) || null;
-      const next = arr.filter((r: any) => Number(r?.id) !== id);
+      const toDelete = arr.find((r: any) => String(r?.id) === id) || null;
+      const next = arr.filter((r: any) => String(r?.id) !== id);
       await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8");
       const dirAbs = (toDelete && typeof toDelete.verzeichnis === 'string' && toDelete.verzeichnis)
         ? toDelete.verzeichnis
@@ -82,25 +85,56 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
 
 export async function PATCH(req: Request, ctx: { params: { id: string } }) {
   try {
-    const id = Number(ctx.params.id);
-    if (!Number.isFinite(id) || id <= 0) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-    }
+    const id = String(ctx.params.id ?? "").trim();
+    if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
+    const baseDir = process.env.AUSSCHREIBUNGEN_BASE_DIR || path.join(process.cwd(), 'data');
     const toNull = (v: any) => (v === undefined || v === "" ? null : v);
     const name = body.name === undefined ? undefined : String(body.name ?? "").trim();
+    const folderRaw = body.ordnername === undefined ? undefined : sanitizeFolderName(body.ordnername);
+    const useExisting = body.useExisting === true;
 
     if (process.env.USE_MOCK === '1') {
       const file = path.join(process.cwd(), "public", "mock", "ausschreibungen.json");
       const txt = await fs.readFile(file, "utf8").catch(() => "[]");
       const arr: any[] = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
-      const idx = arr.findIndex((r: any) => Number(r?.id) === id);
+      const idx = arr.findIndex((r: any) => String(r?.id) === id);
       if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const row = arr[idx];
+      let currentDir = (row && typeof row.verzeichnis === "string" && row.verzeichnis)
+        ? row.verzeichnis
+        : path.join(baseDir, String(id));
+      const statCurrent = await fs.stat(currentDir).catch(() => null);
+      if (!statCurrent) {
+        currentDir = path.join(baseDir, String(id));
+      }
+      const targetName = folderRaw === undefined ? path.basename(currentDir) : (folderRaw || String(id));
+      const targetDir = path.join(baseDir, targetName);
+      if (targetDir !== currentDir) {
+        const exists = await fs.stat(targetDir).catch(() => null);
+        if (exists && !useExisting) {
+          return NextResponse.json({ error: "Ordner existiert bereits", code: "folder_exists" }, { status: 409 });
+        }
+        if (!exists) {
+          let moved = false;
+          try { await fs.rename(currentDir, targetDir); moved = true; }
+          catch {
+            try {
+              await fs.cp(currentDir, targetDir, { recursive: true, force: false, errorOnExist: true });
+              await fs.rm(currentDir, { recursive: true, force: true });
+              moved = true;
+            } catch { /* ignore */ }
+          }
+          if (!moved) {
+            return NextResponse.json({ error: "Ordner konnte nicht verschoben werden" }, { status: 500 });
+          }
+        }
+        row.verzeichnis = targetDir;
+      }
       const updated = {
         ...row,
         abgabefrist: body.abgabefrist === undefined ? row.abgabefrist : toNull(body.abgabefrist),
@@ -121,7 +155,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
         ausfuehrung: body.ausfuehrung === undefined ? row.ausfuehrung : toNull(body.ausfuehrung),
         vergabe_nr: body.vergabe_nr === undefined ? row.vergabe_nr : toNull(body.vergabe_nr),
         link: body.link === undefined ? row.link : toNull(body.link),
-        verzeichnis: body.verzeichnis === undefined ? row.verzeichnis : toNull(body.verzeichnis),
+        verzeichnis: targetDir,
         updated_at: new Date().toISOString(),
       };
       arr[idx] = updated;
@@ -131,6 +165,40 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
       // load before
       const beforeRes = await pool.query("SELECT * FROM public.ausschreibungen WHERE id=$1", [id]);
       const before = beforeRes.rows[0] ?? null;
+      let currentDir = (before && typeof before.verzeichnis === "string" && before.verzeichnis)
+        ? before.verzeichnis
+        : path.join(baseDir, String(id));
+      const statCurrent = await fs.stat(currentDir).catch(() => null);
+      if (!statCurrent) {
+        currentDir = path.join(baseDir, String(id));
+      }
+      const targetName = folderRaw === undefined ? path.basename(currentDir) : (folderRaw || String(id));
+      const targetDir = path.join(baseDir, targetName);
+
+      if (targetDir !== currentDir) {
+        const exists = await fs.stat(targetDir).catch(() => null);
+        if (exists && !useExisting) {
+          return NextResponse.json({ error: "Ordner existiert bereits", code: "folder_exists" }, { status: 409 });
+        }
+        let moved = false;
+        if (!exists) {
+          try { await fs.rename(currentDir, targetDir); moved = true; }
+          catch {
+            try {
+              await fs.cp(currentDir, targetDir, { recursive: true, force: false, errorOnExist: true });
+              await fs.rm(currentDir, { recursive: true, force: true });
+              moved = true;
+            } catch { /* ignore */ }
+          }
+          if (!moved) {
+            return NextResponse.json({ error: "Ordner konnte nicht verschoben werden" }, { status: 500 });
+          }
+        } else {
+          moved = true; // reuse existing
+        }
+      }
+
+      const newVerzeichnis = targetDir;
       const values = [
         toNull(body.abgabefrist),
         toNull(body.uhrzeit),
@@ -150,7 +218,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
         toNull(body.ausfuehrung),
         toNull(body.vergabe_nr),
         toNull(body.link),
-        toNull(body.verzeichnis),
+        newVerzeichnis,
         id,
       ];
 

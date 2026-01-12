@@ -62,11 +62,11 @@ export default function Page() {
   // Edit-Zustand
   const [openEdit, setOpenEdit] = useState(false);
   const [selected, setSelected] = useState<Row | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
   // Multi-select state
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openBulkDelete, setOpenBulkDelete] = useState(false);
 
   // Long-text preview modal
@@ -151,7 +151,7 @@ export default function Page() {
   useEffect(() => { load(); loadColumns(); }, []);
   useEffect(() => { const t = setInterval(() => { load(); }, 5000); return () => clearInterval(t); }, []);
 
-  async function doDelete(id: number) {
+  async function doDelete(id: string) {
     setBusyId(id);
     const res = await fetch(`/api/ausschreibungen/${id}`, { method: "DELETE" });
     setBusyId(null);
@@ -162,7 +162,7 @@ export default function Page() {
     await load();
   }
 
-  async function onDelete(id: number) {
+  async function onDelete(id: string) {
     if (!confirm(`Diesen Datensatz (ID ${id}) wirklich löschen?`)) return;
     setBusyId(id);
     const res = await fetch(`/api/ausschreibungen/${id}`, { method: "DELETE" });
@@ -248,8 +248,8 @@ export default function Page() {
 
   // Checkbox header/row helpers
   const headerCbxRef = useRef<HTMLInputElement>(null);
-  const visibleIds = useMemo(() => paged.map(r => Number(r?.id)).filter(n => Number.isFinite(n)), [paged]);
-  const allFilteredIds = useMemo(() => sorted.map(r => Number(r?.id)).filter(n => Number.isFinite(n)), [sorted]);
+  const visibleIds = useMemo(() => paged.map(r => String(r?.id ?? "")).filter(Boolean), [paged]);
+  const allFilteredIds = useMemo(() => sorted.map(r => String(r?.id ?? "")).filter(Boolean), [sorted]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
   const allFilteredSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some(id => selectedIds.has(id));
@@ -275,11 +275,11 @@ export default function Page() {
     });
   }
 
-  function toggleRowSelect(id: number, checked: boolean) {
+  function toggleRowSelect(id: string, checked: boolean) {
     setSelectedIds(prev => { const next = new Set(prev); checked ? next.add(id) : next.delete(id); return next; });
   }
 
-  async function doBulkDelete(ids: number[]) {
+  async function doBulkDelete(ids: string[]) {
     for (const id of ids) { await doDelete(id); }
     setSelectedIds(new Set());
   }
@@ -617,7 +617,7 @@ const exportCsv = () => {
                     return (
                       <tr key={r.id ?? JSON.stringify(r)} className={rowClass}>
                         <td className="table-cell text-left">
-                          <input type="checkbox" className="checkbox" checked={selectedIds.has(Number(r?.id))} onChange={e => toggleRowSelect(Number(r?.id), e.currentTarget.checked)} disabled={role === 'viewer'} />
+                          <input type="checkbox" className="checkbox" checked={selectedIds.has(String(r?.id ?? ''))} onChange={e => toggleRowSelect(String(r?.id ?? ''), e.currentTarget.checked)} disabled={role === 'viewer'} />
                         </td>
                         {columns.map(col => {
                           const val = r?.[col];

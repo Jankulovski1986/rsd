@@ -6,6 +6,11 @@ import { logAudit, getReqMeta } from "@/lib/audit";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
+const sanitizeFolderName = (v: unknown) => {
+  if (typeof v !== "string") return "";
+  return v.trim().replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+};
+
 // Ein globaler Pool (hot-reload-sicher)
 let pool: Pool;
 declare global { var _pgPool: Pool | undefined }
@@ -58,6 +63,7 @@ export async function POST(req: Request) {
     }
 
     const toNull = (v: any) => (v === undefined || v === "" ? null : v);
+    const useExisting = body.useExisting === true;
 
     const name = String(body.name ?? "").trim();
     if (!name) {
@@ -74,8 +80,18 @@ export async function POST(req: Request) {
       const arr = Array.isArray(JSON.parse(txt)) ? JSON.parse(txt) : [];
       const now = new Date().toISOString();
       const nextId = arr.reduce((m: number, r: any) => Math.max(m, Number(r?.id ?? 0)), 0) + 1;
-      const verzeichnisAbs = path.join(baseDir, String(nextId));
-      try { await fs.mkdir(verzeichnisAbs, { recursive: true }); } catch {}
+      const folderRaw = sanitizeFolderName(body.ordnername);
+      const folderName = folderRaw || String(nextId);
+      const verzeichnisAbs = path.join(baseDir, folderName);
+      try {
+        const stat = await fs.stat(verzeichnisAbs).catch(() => null);
+        if (stat && !useExisting) {
+          return NextResponse.json({ error: "Ordner existiert bereits", code: "folder_exists" }, { status: 409 });
+        }
+        if (!stat) await fs.mkdir(verzeichnisAbs, { recursive: true });
+      } catch (e: any) {
+        return NextResponse.json({ error: "Ordner konnte nicht erstellt werden", detail: String(e?.message ?? e) }, { status: 500 });
+      }
       const row = {
         id: nextId,
         abgabefrist: toNull(body.abgabefrist),
@@ -145,8 +161,18 @@ export async function POST(req: Request) {
 
     // After insert: create directory and store path in 'verzeichnis'
     const createdRow = rows[0];
-    const dirAbs = path.join(baseDir, String(createdRow.id));
-    try { await fs.mkdir(dirAbs, { recursive: true }); } catch {}
+    const folderRaw = sanitizeFolderName(body.ordnername);
+    const folderName = folderRaw || String(createdRow.id);
+    const dirAbs = path.join(baseDir, folderName);
+    try {
+      const stat = await fs.stat(dirAbs).catch(() => null);
+      if (stat && !useExisting) {
+        return NextResponse.json({ error: "Ordner existiert bereits", code: "folder_exists" }, { status: 409 });
+      }
+      if (!stat) await fs.mkdir(dirAbs, { recursive: true });
+    } catch (e: any) {
+      return NextResponse.json({ error: "Ordner konnte nicht erstellt werden", detail: String(e?.message ?? e) }, { status: 500 });
+    }
     const { rows: updRows } = await pool.query(
       `UPDATE public.ausschreibungen SET verzeichnis=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
       [dirAbs, createdRow.id]
