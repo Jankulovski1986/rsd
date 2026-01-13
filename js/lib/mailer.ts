@@ -1,6 +1,6 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: Transporter | null = null;
 
 function createTransport() {
   const host = process.env.SMTP_HOST;
@@ -43,4 +43,3 @@ export async function sendReset(email: string, link: string) {
     <p>Falls der Link nicht klickbar ist: ${link}</p>`;
   await mailer().sendMail({ from, to: email, subject: "Passwort zurücksetzen", html, text: html.replace(/<[^>]+>/g, "") });
 }
-
